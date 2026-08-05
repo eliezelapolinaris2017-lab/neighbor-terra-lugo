@@ -10,6 +10,7 @@ const dialogForm = document.querySelector('#dialogForm');
 let users = [];
 let db = null;
 let auth = null;
+let functions = null;
 let firebaseAvailable = false;
 
 const roles = {
@@ -36,9 +37,11 @@ async function initializeAccess() {
     const appModule = await import('https://www.gstatic.com/firebasejs/12.1.0/firebase-app.js');
     const authModule = await import('https://www.gstatic.com/firebasejs/12.1.0/firebase-auth.js');
     const firestoreModule = await import('https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js');
+    const functionsModule = await import('https://www.gstatic.com/firebasejs/12.1.0/firebase-functions.js');
     const app = appModule.getApps().length ? appModule.getApp() : appModule.initializeApp(firebaseConfig);
     auth = authModule.getAuth(app);
     db = firestoreModule.getFirestore(app);
+    functions = functionsModule.getFunctions(app, 'us-east1');
     firebaseAvailable = true;
   } catch (error) {
     console.warn('Usuarios y roles operarán en modo local.', error);
@@ -54,12 +57,10 @@ async function openUsers() {
   dialog.showModal();
   try {
     users = firebaseAvailable && auth?.currentUser ? await listFirebaseUsers() : loadLocalUsers();
+    renderUsers();
   } catch (error) {
-    console.error(error);
     dialogBody.innerHTML = `<div class="empty-state">${escapeHtml(error.message || 'No se pudieron cargar los usuarios.')}</div>`;
-    return;
   }
-  renderUsers();
 }
 
 async function listFirebaseUsers() {
@@ -72,57 +73,54 @@ function renderUsers(filter = '') {
   const queryText = filter.trim().toLowerCase();
   const filtered = users.filter((user) => `${user.name || ''} ${user.email || ''} ${user.role || ''} ${user.status || ''}`.toLowerCase().includes(queryText));
   dialogTitle.textContent = 'Usuarios y roles';
+  dialogForm.onsubmit = null;
   dialogBody.innerHTML = `
-    <label>Buscar usuario<input id="userAccessSearch" type="search" placeholder="Nombre, correo o rol" value="${escapeHtml(filter)}"></label>
+    <div class="homes-toolbar">
+      <input id="userAccessSearch" type="search" placeholder="Nombre, correo o rol" value="${escapeHtml(filter)}">
+      <button class="primary-button compact-button" id="newUserButton" type="button">+ Nuevo usuario</button>
+    </div>
     <div class="module-list">
       ${filtered.length ? filtered.map(userRow).join('') : '<div class="empty-state">No hay usuarios registrados.</div>'}
     </div>`;
   document.querySelector('#userAccessSearch').addEventListener('input', (event) => renderUsers(event.target.value));
+  document.querySelector('#newUserButton').addEventListener('click', showNewUserForm);
   document.querySelectorAll('[data-edit-access]').forEach((button) => button.addEventListener('click', () => showAccessForm(button.dataset.editAccess)));
-  document.querySelectorAll('[data-activate-user]').forEach((button) => button.addEventListener('click', () => activateUser(button.dataset.activateUser)));
-  document.querySelectorAll('[data-send-access]').forEach((button) => button.addEventListener('click', () => sendAccessEmail(button.dataset.sendAccess)));
+  document.querySelectorAll('[data-reset-access]').forEach((button) => button.addEventListener('click', () => sendAccessEmail(button.dataset.resetAccess)));
 }
 
 function userRow(user) {
   const status = user.status === 'inactive' ? 'Inactivo' : user.status === 'pending' ? 'Pendiente' : 'Activo';
   const id = escapeHtml(user.id || user.uid);
-  return `
-    <article class="home-row">
-      <div>
-        <strong>${escapeHtml(user.name || user.email || 'Usuario')}</strong>
-        <p>${escapeHtml(user.email || 'Sin correo')} · ${escapeHtml(roles[user.role] || user.role || 'Sin rol')} · ${status}</p>
-      </div>
-      <div class="row-actions">
-        ${user.email ? `<button type="button" data-send-access="${id}">Enviar acceso</button>` : ''}
-        ${user.status === 'pending' ? `<button type="button" data-activate-user="${id}">Activar</button>` : ''}
-        <button type="button" data-edit-access="${id}">Editar</button>
-      </div>
-    </article>`;
+  return `<article class="home-row"><div><strong>${escapeHtml(user.name || user.email || 'Usuario')}</strong><p>${escapeHtml(user.email || 'Sin correo')} · ${escapeHtml(roles[user.role] || user.role || 'Sin rol')} · ${status}</p></div><div class="row-actions"><button type="button" data-reset-access="${id}">Enviar acceso</button><button type="button" data-edit-access="${id}">Editar</button></div></article>`;
 }
 
-async function sendAccessEmail(id) {
-  const user = users.find((item) => (item.id || item.uid) === id);
-  if (!user?.email || !firebaseAvailable) return;
-  try {
-    const { sendPasswordResetEmail } = await import('https://www.gstatic.com/firebasejs/12.1.0/firebase-auth.js');
-    await sendPasswordResetEmail(auth, user.email);
-    alert(`Enlace enviado a ${user.email}.`);
-  } catch (error) {
-    console.error(error);
-    alert('No se pudo enviar. Verifica que ese correo exista en Firebase Authentication.');
-  }
+function showNewUserForm() {
+  dialogTitle.textContent = 'Nuevo usuario';
+  dialogBody.innerHTML = `
+    <label>Nombre completo<input name="name" required placeholder="Nombre y apellidos"></label>
+    <label>Correo electrónico<input name="email" type="email" required placeholder="nombre@correo.com"></label>
+    <div class="form-grid"><label>Unidad<input name="homeId" placeholder="Ej. B-24"></label><label>Teléfono<input name="phone" type="tel" placeholder="787-000-0000"></label></div>
+    <label>Rol<select name="role">${Object.entries(roles).map(([value, label]) => `<option value="${value}" ${value === 'resident' ? 'selected' : ''}>${label}</option>`).join('')}</select></label>
+    <div class="form-actions"><button class="secondary-button" id="cancelNewUser" type="button">Cancelar</button><button class="primary-button" type="submit">Crear cuenta</button></div>
+    <p class="form-message" id="newUserMessage"></p>`;
+  document.querySelector('#cancelNewUser').addEventListener('click', () => renderUsers());
+  dialogForm.onsubmit = createUser;
 }
 
-async function activateUser(id) {
-  const user = users.find((item) => (item.id || item.uid) === id);
-  if (!user) return;
+async function createUser(event) {
+  event.preventDefault();
+  const message = document.querySelector('#newUserMessage');
+  const data = Object.fromEntries(new FormData(dialogForm).entries());
+  message.textContent = 'Creando cuenta…';
   try {
-    await persistAccess(user, user.role || 'resident', 'active');
-    users = firebaseAvailable && auth?.currentUser ? await listFirebaseUsers() : users.map((item) => (item.id || item.uid) === id ? { ...item, status: 'active' } : item);
-    if (!firebaseAvailable || !auth?.currentUser) localStorage.setItem(LOCAL_KEY, JSON.stringify(users));
+    if (!firebaseAvailable || !auth?.currentUser || !functions) throw new Error('Firebase Functions no está disponible.');
+    const { httpsCallable } = await import('https://www.gstatic.com/firebasejs/12.1.0/firebase-functions.js');
+    await httpsCallable(functions, 'createNeighborUser')(data);
+    await sendPasswordReset(data.email);
+    users = await listFirebaseUsers();
     renderUsers();
   } catch (error) {
-    alert(error.message || 'No se pudo activar el usuario.');
+    message.textContent = cleanFunctionError(error);
   }
 }
 
@@ -144,40 +142,40 @@ async function saveAccess(event, user) {
   event.preventDefault();
   const data = Object.fromEntries(new FormData(dialogForm).entries());
   const message = document.querySelector('#accessMessage');
-  const adminCount = users.filter((item) => item.role === 'admin' && item.status !== 'inactive').length;
-  if (user.role === 'admin' && data.role !== 'admin' && adminCount <= 1) {
-    message.textContent = 'Debe permanecer al menos un administrador activo.';
-    return;
-  }
   message.textContent = 'Guardando…';
   try {
-    await persistAccess(user, data.role, data.status);
-    users = firebaseAvailable && auth?.currentUser ? await listFirebaseUsers() : users.map((item) => (item.id || item.uid) === (user.id || user.uid) ? { ...item, role: data.role, status: data.status } : item);
-    if (!firebaseAvailable || !auth?.currentUser) localStorage.setItem(LOCAL_KEY, JSON.stringify(users));
+    if (firebaseAvailable && auth?.currentUser && functions) {
+      const { httpsCallable } = await import('https://www.gstatic.com/firebasejs/12.1.0/firebase-functions.js');
+      await httpsCallable(functions, 'updateNeighborUserAccess')({ uid: user.id || user.uid, role: data.role, status: data.status });
+      users = await listFirebaseUsers();
+    } else {
+      users = users.map((item) => (item.id || item.uid) === (user.id || user.uid) ? { ...item, role: data.role, status: data.status } : item);
+      localStorage.setItem(LOCAL_KEY, JSON.stringify(users));
+    }
     renderUsers();
   } catch (error) {
-    message.textContent = error.message || 'No se pudo actualizar el acceso.';
+    message.textContent = cleanFunctionError(error);
   }
 }
 
-async function persistAccess(user, role, status) {
-  if (firebaseAvailable && auth?.currentUser) {
-    const { addDoc, collection, doc, serverTimestamp, updateDoc } = await import('https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js');
-    await updateDoc(doc(db, ...rootPath(), 'users', user.id || user.uid), { role, status, updatedBy: auth.currentUser.uid, updatedAt: serverTimestamp() });
-    await addDoc(collection(db, ...rootPath(), 'activity'), {
-      type: 'role-change', icon: '🔐', title: 'Acceso actualizado',
-      detail: `${user.name || user.email}: ${roles[role]} · ${status}`,
-      targetUserId: user.id || user.uid, userId: auth.currentUser.uid,
-      communityId: COMMUNITY_ID, createdAt: serverTimestamp()
-    });
+async function sendAccessEmail(id) {
+  const user = users.find((item) => (item.id || item.uid) === id);
+  if (!user?.email) return alert('Este usuario no tiene correo.');
+  try {
+    await sendPasswordReset(user.email);
+    alert(`Enlace de acceso enviado a ${user.email}.`);
+  } catch (error) {
+    alert(error.message || 'No se pudo enviar el acceso.');
   }
+}
+
+async function sendPasswordReset(email) {
+  const { sendPasswordResetEmail } = await import('https://www.gstatic.com/firebasejs/12.1.0/firebase-auth.js');
+  await sendPasswordResetEmail(auth, String(email || '').trim().toLowerCase());
 }
 
 function loadLocalUsers() {
-  try {
-    const saved = JSON.parse(localStorage.getItem(LOCAL_KEY));
-    if (Array.isArray(saved) && saved.length) return saved;
-  } catch {}
+  try { const saved = JSON.parse(localStorage.getItem(LOCAL_KEY)); if (Array.isArray(saved) && saved.length) return saved; } catch {}
   const seed = [
     { id: 'demo-admin', name: 'Administración', email: 'admin@terralugo.demo', role: 'admin', status: 'active' },
     { id: 'demo-guard', name: 'Seguridad', email: 'seguridad@terralugo.demo', role: 'guard', status: 'active' },
@@ -185,6 +183,10 @@ function loadLocalUsers() {
   ];
   localStorage.setItem(LOCAL_KEY, JSON.stringify(seed));
   return seed;
+}
+
+function cleanFunctionError(error) {
+  return String(error?.message || 'No se pudo completar la operación.').replace(/^FirebaseError:\s*/i, '').replace(/^functions\/[\w-]+:\s*/i, '');
 }
 
 function escapeHtml(value) {
