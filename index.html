@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#0F4C81" />
+  <title>Neighbor · Terra Lugo</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main class="app-shell">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Buenos días 👋</p>
+        <h1>Eliezel</h1>
+        <button class="community-switch" type="button">Terra Lugo · Cupey Bajo <span>⌄</span></button>
+      </div>
+      <button class="avatar" type="button" aria-label="Abrir perfil">EG</button>
+    </header>
+
+    <section class="hero" aria-label="Resumen de la comunidad">
+      <div>
+        <span class="hero-badge">Neighbor</span>
+        <h2>Tu comunidad, conectada.</h2>
+        <p>Todo lo importante de Terra Lugo en un solo lugar.</p>
+      </div>
+      <div class="hero-mark" aria-hidden="true">N</div>
+    </section>
+
+    <section>
+      <div class="section-title">
+        <h2>Acciones principales</h2>
+      </div>
+      <div class="action-grid" id="actionGrid"></div>
+    </section>
+
+    <section>
+      <div class="section-title">
+        <h2>Actividad reciente</h2>
+        <button class="text-button" type="button">Ver todo</button>
+      </div>
+      <div class="timeline" id="timeline"></div>
+    </section>
+  </main>
+
+  <nav class="bottom-nav" aria-label="Navegación principal">
+    <button class="nav-item active" type="button" data-route="inicio"><span>⌂</span>Inicio</button>
+    <button class="nav-item" type="button" data-route="visitas"><span>🚗</span>Visitas</button>
+    <button class="nav-item" type="button" data-route="paquetes"><span>📦</span>Paquetes</button>
+    <button class="nav-item" type="button" data-route="avisos"><span>🔔</span>Avisos</button>
+    <button class="nav-item" type="button" data-route="perfil"><span>◎</span>Perfil</button>
+  </nav>
+
+  <dialog id="featureDialog">
+    <form method="dialog">
+      <button class="dialog-close" aria-label="Cerrar">×</button>
+      <p class="eyebrow">Neighbor Alpha</p>
+      <h2 id="dialogTitle">Módulo</h2>
+      <p id="dialogText">Este módulo se conectará a Firebase en la próxima etapa.</p>
+      <button class="primary-button" value="close">Entendido</button>
+    </form>
+  </dialog>
+
+  <script src="app.js"></script>
+</body>
+</html>
