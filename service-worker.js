@@ -1,4 +1,4 @@
-const CACHE_NAME = 'neighbor-terra-lugo-v0.7';
+const CACHE_NAME = 'neighbor-terra-lugo-v0.8';
 const APP_SHELL = [
   './',
   './index.html',
@@ -6,6 +6,8 @@ const APP_SHELL = [
   './hero.css',
   './homes.css',
   './app.js',
+  './admin-actions.js',
+  './residents-module.js',
   './homes-module.js',
   './firebase-config.js',
   './firebase-service.js',
@@ -27,7 +29,6 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
-
   event.respondWith(
     fetch(event.request)
       .then((response) => {
