@@ -23,22 +23,20 @@
   <section class="login-screen" id="loginScreen">
     <div class="login-card">
       <div class="brand-lockup"><span class="brand-mark">N</span><div><strong>Neighbor</strong><small>Terra Lugo · Cupey Bajo</small></div></div>
-      <p class="eyebrow">Neighbor Alpha 0.7</p>
+      <p class="eyebrow">Neighbor Alpha 0.8</p>
       <h1>Bienvenido</h1>
       <p class="login-copy">Accede con tu cuenta o utiliza un perfil de demostración.</p>
-
       <form class="auth-form" id="loginForm">
         <label>Correo electrónico<input name="email" type="email" autocomplete="email" placeholder="nombre@correo.com" required></label>
         <label>Contraseña<input name="password" type="password" autocomplete="current-password" minlength="6" placeholder="••••••••" required></label>
         <button class="primary-button" type="submit">Iniciar sesión</button>
         <p class="form-message" id="loginMessage" aria-live="polite"></p>
       </form>
-
       <div class="login-divider"><span>Modo demostración</span></div>
       <div class="role-grid">
         <button class="role-card" type="button" data-role="resident"><span>🏠</span><strong>Residente</strong><small>Visitas, paquetes, reservas y cuenta</small></button>
         <button class="role-card" type="button" data-role="guard"><span>🛡️</span><strong>Seguridad</strong><small>Entradas, QR, paquetes e incidentes</small></button>
-        <button class="role-card" type="button" data-role="admin"><span>🏢</span><strong>Administración</strong><small>Residencias, avisos, cobros y reportes</small></button>
+        <button class="role-card" type="button" data-role="admin"><span>🏢</span><strong>Administración</strong><small>Residencias, residentes, cobros y reportes</small></button>
       </div>
     </div>
   </section>
@@ -54,7 +52,6 @@
         </div>
         <button class="avatar" id="avatarButton" type="button" aria-label="Abrir perfil">EV</button>
       </header>
-
       <div class="hero-copy">
         <span class="hero-badge" id="roleBadge">Neighbor Resident</span>
         <h2 id="heroTitle">Tu comunidad, conectada.</h2>
@@ -63,17 +60,12 @@
     </section>
 
     <section class="connection-banner" id="connectionBanner">Modo local activo</section>
-
     <section>
       <div class="section-title"><h2 id="actionsTitle">Acciones principales</h2><button class="text-button" id="changeRole" type="button">Cerrar sesión</button></div>
       <div class="action-grid" id="actionGrid"></div>
     </section>
-
     <section>
-      <div class="section-title">
-        <h2>Actividad reciente</h2>
-        <button class="text-button" id="clearActivity" type="button">Limpiar demo</button>
-      </div>
+      <div class="section-title"><h2>Actividad reciente</h2><button class="text-button" id="clearActivity" type="button">Limpiar demo</button></div>
       <div class="timeline" id="timeline"></div>
     </section>
   </main>
@@ -90,6 +82,8 @@
   </dialog>
 
   <script type="module" src="app.js"></script>
+  <script type="module" src="admin-actions.js"></script>
+  <script type="module" src="residents-module.js"></script>
   <script type="module" src="homes-module.js"></script>
   <script>
     const featureDialog = document.querySelector('#featureDialog');
@@ -99,7 +93,6 @@
       const outside = event.clientX < box.left || event.clientX > box.right || event.clientY < box.top || event.clientY > box.bottom;
       if (outside) featureDialog.close();
     });
-
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => navigator.serviceWorker.register('./service-worker.js').catch(console.error));
     }
