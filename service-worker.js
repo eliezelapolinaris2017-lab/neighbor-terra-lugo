@@ -1,4 +1,4 @@
-const CACHE_NAME = 'neighbor-terra-lugo-v0.8';
+const CACHE_NAME = 'neighbor-terra-lugo-v0.9';
 const APP_SHELL = [
   './',
   './index.html',
@@ -9,6 +9,7 @@ const APP_SHELL = [
   './admin-actions.js',
   './residents-module.js',
   './homes-module.js',
+  './vehicles-module.js',
   './firebase-config.js',
   './firebase-service.js',
   './manifest.webmanifest',
@@ -21,9 +22,7 @@ self.addEventListener('install', (event) => {
 });
 
 self.addEventListener('activate', (event) => {
-  event.waitUntil(
-    caches.keys().then((keys) => Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))))
-  );
+  event.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key)))));
   self.clients.claim();
 });
 
