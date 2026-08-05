@@ -7,31 +7,45 @@
   <title>Neighbor · Terra Lugo</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <main class="app-shell">
+  <section class="login-screen" id="loginScreen">
+    <div class="login-card">
+      <div class="brand-lockup"><span class="brand-mark">N</span><div><strong>Neighbor</strong><small>Terra Lugo · Cupey Bajo</small></div></div>
+      <p class="eyebrow">Neighbor Alpha 0.3</p>
+      <h1>Bienvenido</h1>
+      <p class="login-copy">Selecciona tu perfil para entrar al prototipo.</p>
+      <div class="role-grid">
+        <button class="role-card" type="button" data-role="resident"><span>🏠</span><strong>Residente</strong><small>Visitas, paquetes, reservas y cuenta</small></button>
+        <button class="role-card" type="button" data-role="guard"><span>🛡️</span><strong>Seguridad</strong><small>Entradas, QR, paquetes e incidentes</small></button>
+        <button class="role-card" type="button" data-role="admin"><span>🏢</span><strong>Administración</strong><small>Residentes, avisos, cobros y reportes</small></button>
+      </div>
+    </div>
+  </section>
+
+  <main class="app-shell hidden" id="appShell">
     <header class="topbar">
       <div>
-        <p class="eyebrow">Buenos días 👋</p>
-        <h1>Eliezel</h1>
+        <p class="eyebrow" id="greeting">Buenos días 👋</p>
+        <h1 id="userName">Eliezel</h1>
         <button class="community-switch" type="button">Terra Lugo · Cupey Bajo <span>⌄</span></button>
       </div>
-      <button class="avatar" type="button" aria-label="Abrir perfil">EV</button>
+      <button class="avatar" id="avatarButton" type="button" aria-label="Abrir perfil">EV</button>
     </header>
 
     <section class="hero" aria-label="Resumen de la comunidad">
       <div>
-        <span class="hero-badge">Neighbor Alpha 0.2</span>
-        <h2>Tu comunidad, conectada.</h2>
-        <p>Registra visitas, paquetes, reservas e incidencias desde un solo lugar.</p>
+        <span class="hero-badge" id="roleBadge">Neighbor Resident</span>
+        <h2 id="heroTitle">Tu comunidad, conectada.</h2>
+        <p id="heroText">Registra visitas, paquetes, reservas e incidencias desde un solo lugar.</p>
       </div>
       <div class="hero-mark" aria-hidden="true">N</div>
     </section>
 
     <section>
-      <div class="section-title"><h2>Acciones principales</h2></div>
+      <div class="section-title"><h2 id="actionsTitle">Acciones principales</h2><button class="text-button" id="changeRole" type="button">Cambiar perfil</button></div>
       <div class="action-grid" id="actionGrid"></div>
     </section>
 
@@ -44,13 +58,7 @@
     </section>
   </main>
 
-  <nav class="bottom-nav" aria-label="Navegación principal">
-    <button class="nav-item active" type="button" data-route="inicio"><span>⌂</span>Inicio</button>
-    <button class="nav-item" type="button" data-route="visitas"><span>🚗</span>Visitas</button>
-    <button class="nav-item" type="button" data-route="paquetes"><span>📦</span>Paquetes</button>
-    <button class="nav-item" type="button" data-route="avisos"><span>🔔</span>Avisos</button>
-    <button class="nav-item" type="button" data-route="perfil"><span>◎</span>Perfil</button>
-  </nav>
+  <nav class="bottom-nav hidden" id="bottomNav" aria-label="Navegación principal"></nav>
 
   <dialog id="featureDialog">
     <form method="dialog" id="dialogForm">
