@@ -29,6 +29,10 @@ export async function signInNeighbor(email, password) {
   const { signInWithEmailAndPassword } = await import('https://www.gstatic.com/firebasejs/12.1.0/firebase-auth.js');
   const credential = await signInWithEmailAndPassword(auth, email, password);
   const profile = await ensureUserProfile(credential.user);
+  if (profile.status === 'inactive') {
+    await signOutNeighbor();
+    throw new Error('Tu acceso está desactivado. Comunícate con la administración.');
+  }
   return { user: credential.user, profile };
 }
 
@@ -50,7 +54,7 @@ async function ensureUserProfile(user) {
   if (existing) return existing;
   const { doc, setDoc, serverTimestamp } = await import('https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js');
   const fallbackName = user.displayName || user.email?.split('@')[0] || 'Residente';
-  const profile = { uid:user.uid, email:user.email || '', name:fallbackName, initials:fallbackName.slice(0,2).toUpperCase(), role:'resident', communityId:COMMUNITY_ID, status:'pending', createdAt:serverTimestamp() };
+  const profile = { uid:user.uid, email:user.email || '', name:fallbackName, initials:fallbackName.slice(0,2).toUpperCase(), role:'resident', communityId:COMMUNITY_ID, status:'active', createdAt:serverTimestamp() };
   await setDoc(doc(db, ...appRoot(), 'users', user.uid), profile, { merge:true });
   return { ...profile, createdAt:null };
 }
