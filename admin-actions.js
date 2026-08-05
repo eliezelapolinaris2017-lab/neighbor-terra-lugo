@@ -22,6 +22,15 @@ const observer = new MutationObserver(() => {
     vehiclesCard.innerHTML = '<span class="action-icon">🚙</span><strong>Vehículos</strong><small>Tablillas y unidades</small>';
     residentsCard.insertAdjacentElement('afterend', vehiclesCard);
   }
+
+  if (!actionGrid.querySelector('[data-neighbor-users]')) {
+    const usersCard = document.createElement('button');
+    usersCard.className = 'action-card';
+    usersCard.type = 'button';
+    usersCard.dataset.neighborUsers = 'true';
+    usersCard.innerHTML = '<span class="action-icon">🔐</span><strong>Usuarios y roles</strong><small>Administrar accesos</small>';
+    actionGrid.appendChild(usersCard);
+  }
 });
 
 observer.observe(actionGrid, { childList: true });
