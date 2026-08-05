@@ -1,0 +1,39 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function userProfile(communityId) {
+      return get(/databases/$(database)/documents/communities/$(communityId)/users/$(request.auth.uid)).data;
+    }
+
+    function belongsTo(communityId) {
+      return signedIn() && userProfile(communityId).communityId == communityId;
+    }
+
+    function hasRole(communityId, roles) {
+      return belongsTo(communityId) && userProfile(communityId).role in roles;
+    }
+
+    match /communities/{communityId}/users/{userId} {
+      allow read: if signedIn() && (request.auth.uid == userId || hasRole(communityId, ['admin']));
+      allow write: if hasRole(communityId, ['admin']);
+    }
+
+    match /communities/{communityId}/activity/{activityId} {
+      allow read: if belongsTo(communityId);
+      allow create: if belongsTo(communityId)
+        && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if hasRole(communityId, ['admin']);
+    }
+
+    match /communities/{communityId}/{collectionName}/{documentId} {
+      allow read: if belongsTo(communityId);
+      allow create: if hasRole(communityId, ['resident', 'guard', 'admin']);
+      allow update: if hasRole(communityId, ['guard', 'admin']);
+      allow delete: if hasRole(communityId, ['admin']);
+    }
+  }
+}
