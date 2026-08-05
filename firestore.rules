@@ -18,14 +18,20 @@ service cloud.firestore {
     }
 
     function hasRole(roles) {
-      return profileExists() && profile().role in roles;
+      return profileExists() && profile().role in roles && profile().status == 'active';
     }
 
     match /apps/neighbor/communities/terra-lugo/users/{userId} {
       allow create: if signedIn()
-        && request.auth.uid == userId
-        && request.resource.data.uid == request.auth.uid
-        && request.resource.data.role == 'resident'
+        && (
+          (
+            request.auth.uid == userId
+            && request.resource.data.uid == request.auth.uid
+            && request.resource.data.role == 'resident'
+          )
+          || hasRole(['admin'])
+        )
+        && request.resource.data.uid == userId
         && request.resource.data.communityId == 'terra-lugo';
 
       allow read: if signedIn()
