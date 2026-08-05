@@ -80,3 +80,47 @@ export async function saveCommunityActivity(item) {
   });
   return true;
 }
+
+export async function listHomes() {
+  if (!db) return [];
+  const { collection, getDocs, orderBy, query } = await import('https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js');
+  const snapshot = await getDocs(query(collection(db, ...appRoot(), 'homes'), orderBy('unit')));
+  return snapshot.docs.map((item) => ({ id: item.id, ...item.data() }));
+}
+
+export async function createHome(home) {
+  if (!db || !auth?.currentUser) throw new Error('Inicia sesión para guardar en Firebase.');
+  const { doc, setDoc, serverTimestamp } = await import('https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js');
+  const unit = String(home.unit || '').trim().toUpperCase();
+  if (!unit) throw new Error('La unidad es requerida.');
+  await setDoc(doc(db, ...appRoot(), 'homes', unit), {
+    unit,
+    block: String(home.block || '').trim().toUpperCase(),
+    number: String(home.number || '').trim(),
+    ownerName: String(home.ownerName || '').trim(),
+    status: home.status || 'active',
+    balance: Number(home.balance || 0),
+    createdBy: auth.currentUser.uid,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp()
+  });
+  return unit;
+}
+
+export async function updateHome(id, changes) {
+  if (!db || !auth?.currentUser) throw new Error('Inicia sesión para editar en Firebase.');
+  const { doc, updateDoc, serverTimestamp } = await import('https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js');
+  await updateDoc(doc(db, ...appRoot(), 'homes', id), {
+    ownerName: String(changes.ownerName || '').trim(),
+    status: changes.status || 'active',
+    balance: Number(changes.balance || 0),
+    updatedBy: auth.currentUser.uid,
+    updatedAt: serverTimestamp()
+  });
+}
+
+export async function deleteHome(id) {
+  if (!db || !auth?.currentUser) throw new Error('Inicia sesión para eliminar en Firebase.');
+  const { deleteDoc, doc } = await import('https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js');
+  await deleteDoc(doc(db, ...appRoot(), 'homes', id));
+}
