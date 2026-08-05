@@ -69,8 +69,8 @@ async function listFirebaseUsers() {
 }
 
 function renderUsers(filter = '') {
-  const query = filter.trim().toLowerCase();
-  const filtered = users.filter((user) => `${user.name || ''} ${user.email || ''} ${user.role || ''} ${user.status || ''}`.toLowerCase().includes(query));
+  const queryText = filter.trim().toLowerCase();
+  const filtered = users.filter((user) => `${user.name || ''} ${user.email || ''} ${user.role || ''} ${user.status || ''}`.toLowerCase().includes(queryText));
   dialogTitle.textContent = 'Usuarios y roles';
   dialogBody.innerHTML = `
     <label>Buscar usuario<input id="userAccessSearch" type="search" placeholder="Nombre, correo o rol" value="${escapeHtml(filter)}"></label>
@@ -80,6 +80,7 @@ function renderUsers(filter = '') {
   document.querySelector('#userAccessSearch').addEventListener('input', (event) => renderUsers(event.target.value));
   document.querySelectorAll('[data-edit-access]').forEach((button) => button.addEventListener('click', () => showAccessForm(button.dataset.editAccess)));
   document.querySelectorAll('[data-activate-user]').forEach((button) => button.addEventListener('click', () => activateUser(button.dataset.activateUser)));
+  document.querySelectorAll('[data-send-access]').forEach((button) => button.addEventListener('click', () => sendAccessEmail(button.dataset.sendAccess)));
 }
 
 function userRow(user) {
@@ -92,10 +93,24 @@ function userRow(user) {
         <p>${escapeHtml(user.email || 'Sin correo')} · ${escapeHtml(roles[user.role] || user.role || 'Sin rol')} · ${status}</p>
       </div>
       <div class="row-actions">
+        ${user.email ? `<button type="button" data-send-access="${id}">Enviar acceso</button>` : ''}
         ${user.status === 'pending' ? `<button type="button" data-activate-user="${id}">Activar</button>` : ''}
         <button type="button" data-edit-access="${id}">Editar</button>
       </div>
     </article>`;
+}
+
+async function sendAccessEmail(id) {
+  const user = users.find((item) => (item.id || item.uid) === id);
+  if (!user?.email || !firebaseAvailable) return;
+  try {
+    const { sendPasswordResetEmail } = await import('https://www.gstatic.com/firebasejs/12.1.0/firebase-auth.js');
+    await sendPasswordResetEmail(auth, user.email);
+    alert(`Enlace enviado a ${user.email}.`);
+  } catch (error) {
+    console.error(error);
+    alert('No se pudo enviar. Verifica que ese correo exista en Firebase Authentication.');
+  }
 }
 
 async function activateUser(id) {
