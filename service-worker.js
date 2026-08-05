@@ -1,4 +1,4 @@
-const CACHE_NAME = 'neighbor-terra-lugo-v0.7.1';
+const CACHE_NAME = 'neighbor-terra-lugo-v0.8';
 const APP_SHELL = [
   './',
   './index.html',
@@ -14,6 +14,7 @@ const APP_SHELL = [
   './vehicles-module.js',
   './visits-module.js',
   './community-modules.js',
+  './realtime-notifications.js',
   './firebase-config.js',
   './firebase-service.js',
   './manifest.webmanifest',
