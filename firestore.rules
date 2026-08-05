@@ -5,35 +5,61 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    function userProfile(communityId) {
-      return get(/databases/$(database)/documents/communities/$(communityId)/users/$(request.auth.uid)).data;
+    function profilePath() {
+      return /databases/$(database)/documents/apps/neighbor/communities/terra-lugo/users/$(request.auth.uid);
     }
 
-    function belongsTo(communityId) {
-      return signedIn() && userProfile(communityId).communityId == communityId;
+    function profileExists() {
+      return signedIn() && exists(profilePath());
     }
 
-    function hasRole(communityId, roles) {
-      return belongsTo(communityId) && userProfile(communityId).role in roles;
+    function profile() {
+      return get(profilePath()).data;
     }
 
-    match /communities/{communityId}/users/{userId} {
-      allow read: if signedIn() && (request.auth.uid == userId || hasRole(communityId, ['admin']));
-      allow write: if hasRole(communityId, ['admin']);
+    function hasRole(roles) {
+      return profileExists() && profile().role in roles;
     }
 
-    match /communities/{communityId}/activity/{activityId} {
-      allow read: if belongsTo(communityId);
-      allow create: if belongsTo(communityId)
-        && request.resource.data.userId == request.auth.uid;
-      allow update, delete: if hasRole(communityId, ['admin']);
+    match /apps/neighbor/communities/terra-lugo/users/{userId} {
+      allow create: if signedIn()
+        && request.auth.uid == userId
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.role == 'resident'
+        && request.resource.data.communityId == 'terra-lugo';
+
+      allow read: if signedIn()
+        && (request.auth.uid == userId || hasRole(['admin']));
+
+      allow update: if signedIn()
+        && (request.auth.uid == userId || hasRole(['admin']))
+        && request.resource.data.uid == resource.data.uid
+        && request.resource.data.communityId == 'terra-lugo'
+        && (hasRole(['admin']) || request.resource.data.role == resource.data.role);
+
+      allow delete: if hasRole(['admin']);
     }
 
-    match /communities/{communityId}/{collectionName}/{documentId} {
-      allow read: if belongsTo(communityId);
-      allow create: if hasRole(communityId, ['resident', 'guard', 'admin']);
-      allow update: if hasRole(communityId, ['guard', 'admin']);
-      allow delete: if hasRole(communityId, ['admin']);
+    match /apps/neighbor/communities/terra-lugo/activity/{activityId} {
+      allow read: if profileExists();
+      allow create: if profileExists()
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.communityId == 'terra-lugo';
+      allow update, delete: if hasRole(['admin']);
+    }
+
+    match /apps/neighbor/communities/terra-lugo/{collectionName}/{documentId} {
+      allow read: if profileExists();
+      allow create: if hasRole(['resident', 'guard', 'admin']);
+      allow update: if hasRole(['guard', 'admin']);
+      allow delete: if hasRole(['admin']);
+    }
+
+    match /apps/neighbor/communities/terra-lugo/{collectionName}/{documentId}/{subCollection}/{subDocumentId} {
+      allow read: if profileExists();
+      allow create: if hasRole(['resident', 'guard', 'admin']);
+      allow update: if hasRole(['guard', 'admin']);
+      allow delete: if hasRole(['admin']);
     }
   }
 }
