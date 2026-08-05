@@ -1,12 +1,11 @@
-// Reemplaza estos valores con la configuración de tu proyecto Firebase.
-// Mientras apiKey permanezca como REEMPLAZAR, Neighbor funcionará en modo local.
 export const firebaseConfig = {
-  apiKey: 'REEMPLAZAR',
-  authDomain: 'REEMPLAZAR.firebaseapp.com',
-  projectId: 'REEMPLAZAR',
-  storageBucket: 'REEMPLAZAR.appspot.com',
-  messagingSenderId: 'REEMPLAZAR',
-  appId: 'REEMPLAZAR'
+  apiKey: 'AIzaSyAkBdi6tYWetTiyKrt-jHYY9Va1Wikf29c',
+  authDomain: 'nexus-churchs.firebaseapp.com',
+  projectId: 'nexus-churchs',
+  storageBucket: 'nexus-churchs.firebasestorage.app',
+  messagingSenderId: '594921350925',
+  appId: '1:594921350925:web:266da215d57b94fb94b244'
 };
 
 export const COMMUNITY_ID = 'terra-lugo';
+export const APP_NAMESPACE = 'neighbor';
