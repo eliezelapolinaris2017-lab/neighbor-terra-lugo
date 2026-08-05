@@ -23,13 +23,14 @@
   <section class="login-screen" id="loginScreen">
     <div class="login-card">
       <div class="brand-lockup"><span class="brand-mark">N</span><div><strong>Neighbor</strong><small>Terra Lugo · Cupey Bajo</small></div></div>
-      <p class="eyebrow">Neighbor Alpha 1.0</p>
+      <p class="eyebrow">Neighbor Beta 0.5</p>
       <h1>Bienvenido</h1>
       <p class="login-copy">Accede con tu cuenta o utiliza un perfil de demostración.</p>
       <form class="auth-form" id="loginForm">
         <label>Correo electrónico<input name="email" type="email" autocomplete="email" placeholder="nombre@correo.com" required></label>
         <label>Contraseña<input name="password" type="password" autocomplete="current-password" minlength="6" placeholder="••••••••" required></label>
         <button class="primary-button" type="submit">Iniciar sesión</button>
+        <button class="text-button" id="forgotPassword" type="button">Crear o recuperar contraseña</button>
         <p class="form-message" id="loginMessage" aria-live="polite"></p>
       </form>
       <div class="login-divider"><span>Modo demostración</span></div>
@@ -80,6 +81,7 @@
   </dialog>
 
   <script type="module" src="app.js"></script>
+  <script type="module" src="auth-actions.js"></script>
   <script type="module" src="admin-actions.js"></script>
   <script type="module" src="users-module.js"></script>
   <script type="module" src="residents-module.js"></script>
