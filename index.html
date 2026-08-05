@@ -16,12 +16,13 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="hero.css" />
 </head>
 <body>
   <section class="login-screen" id="loginScreen">
     <div class="login-card">
       <div class="brand-lockup"><span class="brand-mark">N</span><div><strong>Neighbor</strong><small>Terra Lugo · Cupey Bajo</small></div></div>
-      <p class="eyebrow">Neighbor Alpha 0.5</p>
+      <p class="eyebrow">Neighbor Alpha 0.6</p>
       <h1>Bienvenido</h1>
       <p class="login-copy">Accede con tu cuenta o utiliza un perfil de demostración.</p>
 
@@ -42,25 +43,25 @@
   </section>
 
   <main class="app-shell hidden" id="appShell">
-    <header class="topbar">
-      <div>
-        <p class="eyebrow" id="greeting">Buenos días 👋</p>
-        <h1 id="userName">Eliezel</h1>
-        <button class="community-switch" type="button">Terra Lugo · Cupey Bajo <span>⌄</span></button>
-      </div>
-      <button class="avatar" id="avatarButton" type="button" aria-label="Abrir perfil">EV</button>
-    </header>
+    <section class="community-hero" aria-label="Terra Lugo">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow" id="greeting">Buenas noches 🌙</p>
+          <h1 id="userName">Eliezel</h1>
+          <button class="community-switch" type="button">Terra Lugo <span>⌄</span></button>
+          <p class="community-location">Cupey Bajo</p>
+        </div>
+        <button class="avatar" id="avatarButton" type="button" aria-label="Abrir perfil">EV</button>
+      </header>
 
-    <section class="connection-banner" id="connectionBanner">Modo local activo</section>
-
-    <section class="hero" aria-label="Resumen de la comunidad">
-      <div>
+      <div class="hero-copy">
         <span class="hero-badge" id="roleBadge">Neighbor Resident</span>
         <h2 id="heroTitle">Tu comunidad, conectada.</h2>
         <p id="heroText">Registra visitas, paquetes, reservas e incidencias desde un solo lugar.</p>
       </div>
-      <div class="hero-mark" aria-hidden="true">N</div>
     </section>
+
+    <section class="connection-banner" id="connectionBanner">Modo local activo</section>
 
     <section>
       <div class="section-title"><h2 id="actionsTitle">Acciones principales</h2><button class="text-button" id="changeRole" type="button">Cerrar sesión</button></div>
