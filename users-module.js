@@ -45,16 +45,13 @@ async function initializeAccess() {
   }
 }
 
-function rootPath() {
-  return ['apps', APP_NAMESPACE, 'communities', COMMUNITY_ID];
-}
+function rootPath() { return ['apps', APP_NAMESPACE, 'communities', COMMUNITY_ID]; }
 
 async function openUsers() {
   dialogEyebrow.textContent = 'Neighbor Admin';
   dialogTitle.textContent = 'Usuarios y roles';
   dialogBody.innerHTML = '<div class="empty-state">Cargando usuarios…</div>';
   dialog.showModal();
-
   try {
     users = firebaseAvailable && auth?.currentUser ? await listFirebaseUsers() : loadLocalUsers();
   } catch (error) {
@@ -62,7 +59,6 @@ async function openUsers() {
     dialogBody.innerHTML = `<div class="empty-state">${escapeHtml(error.message || 'No se pudieron cargar los usuarios.')}</div>`;
     return;
   }
-
   renderUsers();
 }
 
@@ -75,48 +71,56 @@ async function listFirebaseUsers() {
 function renderUsers(filter = '') {
   const query = filter.trim().toLowerCase();
   const filtered = users.filter((user) => `${user.name || ''} ${user.email || ''} ${user.role || ''} ${user.status || ''}`.toLowerCase().includes(query));
-
   dialogTitle.textContent = 'Usuarios y roles';
   dialogBody.innerHTML = `
     <label>Buscar usuario<input id="userAccessSearch" type="search" placeholder="Nombre, correo o rol" value="${escapeHtml(filter)}"></label>
     <div class="module-list">
       ${filtered.length ? filtered.map(userRow).join('') : '<div class="empty-state">No hay usuarios registrados.</div>'}
-    </div>
-  `;
-
+    </div>`;
   document.querySelector('#userAccessSearch').addEventListener('input', (event) => renderUsers(event.target.value));
   document.querySelectorAll('[data-edit-access]').forEach((button) => button.addEventListener('click', () => showAccessForm(button.dataset.editAccess)));
+  document.querySelectorAll('[data-activate-user]').forEach((button) => button.addEventListener('click', () => activateUser(button.dataset.activateUser)));
 }
 
 function userRow(user) {
   const status = user.status === 'inactive' ? 'Inactivo' : user.status === 'pending' ? 'Pendiente' : 'Activo';
+  const id = escapeHtml(user.id || user.uid);
   return `
     <article class="home-row">
       <div>
         <strong>${escapeHtml(user.name || user.email || 'Usuario')}</strong>
         <p>${escapeHtml(user.email || 'Sin correo')} · ${escapeHtml(roles[user.role] || user.role || 'Sin rol')} · ${status}</p>
       </div>
-      <div class="row-actions"><button type="button" data-edit-access="${escapeHtml(user.id || user.uid)}">Editar</button></div>
-    </article>
-  `;
+      <div class="row-actions">
+        ${user.status === 'pending' ? `<button type="button" data-activate-user="${id}">Activar</button>` : ''}
+        <button type="button" data-edit-access="${id}">Editar</button>
+      </div>
+    </article>`;
+}
+
+async function activateUser(id) {
+  const user = users.find((item) => (item.id || item.uid) === id);
+  if (!user) return;
+  try {
+    await persistAccess(user, user.role || 'resident', 'active');
+    users = firebaseAvailable && auth?.currentUser ? await listFirebaseUsers() : users.map((item) => (item.id || item.uid) === id ? { ...item, status: 'active' } : item);
+    if (!firebaseAvailable || !auth?.currentUser) localStorage.setItem(LOCAL_KEY, JSON.stringify(users));
+    renderUsers();
+  } catch (error) {
+    alert(error.message || 'No se pudo activar el usuario.');
+  }
 }
 
 function showAccessForm(id) {
   const user = users.find((item) => (item.id || item.uid) === id);
   if (!user) return;
-
   dialogTitle.textContent = `Acceso de ${user.name || user.email}`;
   dialogBody.innerHTML = `
     <div class="module-list"><article><strong>${escapeHtml(user.name || 'Usuario')}</strong><p>${escapeHtml(user.email || '')}</p></article></div>
     <label>Rol<select name="role">${Object.entries(roles).map(([value, label]) => `<option value="${value}" ${user.role === value ? 'selected' : ''}>${label}</option>`).join('')}</select></label>
     <label>Estado<select name="status"><option value="active" ${user.status === 'active' ? 'selected' : ''}>Activo</option><option value="pending" ${user.status === 'pending' ? 'selected' : ''}>Pendiente</option><option value="inactive" ${user.status === 'inactive' ? 'selected' : ''}>Inactivo</option></select></label>
-    <div class="form-actions">
-      <button class="secondary-button" id="cancelAccessEdit" type="button">Cancelar</button>
-      <button class="primary-button" type="submit">Guardar acceso</button>
-    </div>
-    <p class="form-message" id="accessMessage"></p>
-  `;
-
+    <div class="form-actions"><button class="secondary-button" id="cancelAccessEdit" type="button">Cancelar</button><button class="primary-button" type="submit">Guardar acceso</button></div>
+    <p class="form-message" id="accessMessage"></p>`;
   document.querySelector('#cancelAccessEdit').addEventListener('click', () => renderUsers());
   dialogForm.onsubmit = (event) => saveAccess(event, user);
 }
@@ -126,40 +130,31 @@ async function saveAccess(event, user) {
   const data = Object.fromEntries(new FormData(dialogForm).entries());
   const message = document.querySelector('#accessMessage');
   const adminCount = users.filter((item) => item.role === 'admin' && item.status !== 'inactive').length;
-
   if (user.role === 'admin' && data.role !== 'admin' && adminCount <= 1) {
     message.textContent = 'Debe permanecer al menos un administrador activo.';
     return;
   }
-
   message.textContent = 'Guardando…';
   try {
-    if (firebaseAvailable && auth?.currentUser) {
-      const { addDoc, collection, doc, serverTimestamp, updateDoc } = await import('https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js');
-      await updateDoc(doc(db, ...rootPath(), 'users', user.id || user.uid), {
-        role: data.role,
-        status: data.status,
-        updatedBy: auth.currentUser.uid,
-        updatedAt: serverTimestamp()
-      });
-      await addDoc(collection(db, ...rootPath(), 'activity'), {
-        type: 'role-change',
-        icon: '🔐',
-        title: 'Acceso actualizado',
-        detail: `${user.name || user.email}: ${roles[data.role]} · ${data.status}`,
-        targetUserId: user.id || user.uid,
-        userId: auth.currentUser.uid,
-        communityId: COMMUNITY_ID,
-        createdAt: serverTimestamp()
-      });
-      users = await listFirebaseUsers();
-    } else {
-      users = users.map((item) => (item.id || item.uid) === (user.id || user.uid) ? { ...item, role: data.role, status: data.status } : item);
-      localStorage.setItem(LOCAL_KEY, JSON.stringify(users));
-    }
+    await persistAccess(user, data.role, data.status);
+    users = firebaseAvailable && auth?.currentUser ? await listFirebaseUsers() : users.map((item) => (item.id || item.uid) === (user.id || user.uid) ? { ...item, role: data.role, status: data.status } : item);
+    if (!firebaseAvailable || !auth?.currentUser) localStorage.setItem(LOCAL_KEY, JSON.stringify(users));
     renderUsers();
   } catch (error) {
     message.textContent = error.message || 'No se pudo actualizar el acceso.';
+  }
+}
+
+async function persistAccess(user, role, status) {
+  if (firebaseAvailable && auth?.currentUser) {
+    const { addDoc, collection, doc, serverTimestamp, updateDoc } = await import('https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js');
+    await updateDoc(doc(db, ...rootPath(), 'users', user.id || user.uid), { role, status, updatedBy: auth.currentUser.uid, updatedAt: serverTimestamp() });
+    await addDoc(collection(db, ...rootPath(), 'activity'), {
+      type: 'role-change', icon: '🔐', title: 'Acceso actualizado',
+      detail: `${user.name || user.email}: ${roles[role]} · ${status}`,
+      targetUserId: user.id || user.uid, userId: auth.currentUser.uid,
+      communityId: COMMUNITY_ID, createdAt: serverTimestamp()
+    });
   }
 }
 
