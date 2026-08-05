@@ -18,29 +18,27 @@
         <h1>Eliezel</h1>
         <button class="community-switch" type="button">Terra Lugo · Cupey Bajo <span>⌄</span></button>
       </div>
-      <button class="avatar" type="button" aria-label="Abrir perfil">EG</button>
+      <button class="avatar" type="button" aria-label="Abrir perfil">EV</button>
     </header>
 
     <section class="hero" aria-label="Resumen de la comunidad">
       <div>
-        <span class="hero-badge">Neighbor</span>
+        <span class="hero-badge">Neighbor Alpha 0.2</span>
         <h2>Tu comunidad, conectada.</h2>
-        <p>Todo lo importante de Terra Lugo en un solo lugar.</p>
+        <p>Registra visitas, paquetes, reservas e incidencias desde un solo lugar.</p>
       </div>
       <div class="hero-mark" aria-hidden="true">N</div>
     </section>
 
     <section>
-      <div class="section-title">
-        <h2>Acciones principales</h2>
-      </div>
+      <div class="section-title"><h2>Acciones principales</h2></div>
       <div class="action-grid" id="actionGrid"></div>
     </section>
 
     <section>
       <div class="section-title">
         <h2>Actividad reciente</h2>
-        <button class="text-button" type="button">Ver todo</button>
+        <button class="text-button" id="clearActivity" type="button">Limpiar demo</button>
       </div>
       <div class="timeline" id="timeline"></div>
     </section>
@@ -55,12 +53,11 @@
   </nav>
 
   <dialog id="featureDialog">
-    <form method="dialog">
-      <button class="dialog-close" aria-label="Cerrar">×</button>
-      <p class="eyebrow">Neighbor Alpha</p>
+    <form method="dialog" id="dialogForm">
+      <button class="dialog-close" value="cancel" aria-label="Cerrar">×</button>
+      <p class="eyebrow" id="dialogEyebrow">Neighbor</p>
       <h2 id="dialogTitle">Módulo</h2>
-      <p id="dialogText">Este módulo se conectará a Firebase en la próxima etapa.</p>
-      <button class="primary-button" value="close">Entendido</button>
+      <div id="dialogBody"></div>
     </form>
   </dialog>
 
