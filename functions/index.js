@@ -113,17 +113,26 @@ exports.updateNeighborUserAccess = onCall({ region: 'us-east1' }, async (request
   if (!targetSnap.exists) throw new HttpsError('not-found', 'No se encontró el usuario.');
 
   const target = targetSnap.data();
-  if (target.role === 'admin' && (role !== 'admin' || status === 'inactive')) {
-    const activeAdmins = await db.collection(`${COMMUNITY_PATH}/users`)
+  if (target.role === 'admin' && (role !== 'admin' || status !== 'active')) {
+    // Una sola consulta evita requerir un índice compuesto de Firestore.
+    const adminSnapshot = await db.collection(`${COMMUNITY_PATH}/users`)
       .where('role', '==', 'admin')
-      .where('status', '==', 'active')
       .get();
-    if (activeAdmins.size <= 1) {
+    const activeAdminCount = adminSnapshot.docs.filter((doc) => doc.data().status === 'active').length;
+    if (activeAdminCount <= 1) {
       throw new HttpsError('failed-precondition', 'Debe permanecer al menos un administrador activo.');
     }
   }
 
-  await getAuth().updateUser(targetUid, { disabled: status === 'inactive' });
+  try {
+    await getAuth().updateUser(targetUid, { disabled: status === 'inactive' });
+  } catch (error) {
+    if (error.code === 'auth/user-not-found') {
+      throw new HttpsError('not-found', 'La cuenta no existe en Firebase Authentication.');
+    }
+    throw new HttpsError('internal', error.message || 'No se pudo actualizar Authentication.');
+  }
+
   await targetRef.update({
     role,
     status,
