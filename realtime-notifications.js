@@ -8,10 +8,12 @@ const LABELS = {
   announcements: ['📢', 'Nuevo comunicado'],
   visits: ['🚗', 'Nueva visita']
 };
+const STORAGE_PREFIX = `neighbor-${COMMUNITY_ID}-notifications`;
 
 let auth;
 let db;
 let profile = null;
+let currentUid = null;
 let unsubscribeAll = [];
 let initializedCollections = new Set();
 let notifications = [];
@@ -32,11 +34,13 @@ async function initializeRealtime() {
     authModule.onAuthStateChanged(auth, async (user) => {
       stopListeners();
       profile = null;
+      currentUid = user?.uid || null;
       initializedCollections.clear();
-      if (!user) {
-        updateBadge();
-        return;
-      }
+      notifications = loadNotifications();
+      unread = notifications.filter((item) => !item.read).length;
+      updateBadge();
+
+      if (!user) return;
 
       const profileRef = firestore.doc(db, 'apps', APP_NAMESPACE, 'communities', COMMUNITY_ID, 'users', user.uid);
       const snapshot = await firestore.getDoc(profileRef);
@@ -69,6 +73,7 @@ function startListeners(firestore, user) {
       window.dispatchEvent(new CustomEvent('neighbor:realtime-update', {
         detail: { module, items: visibleItems }
       }));
+      updateLiveCounters(module, visibleItems);
       refreshOpenModule(module);
     }, (error) => console.warn(`Listener ${module}:`, error));
     unsubscribeAll.push(unsubscribe);
@@ -88,7 +93,7 @@ function canSee(module, item, user) {
   }
 
   if (role === 'guard') {
-    return module === 'visits' || module === 'packages' || module === 'incidents' || item.createdBy === user.uid;
+    return ['visits', 'packages', 'incidents'].includes(module) || item.createdBy === user.uid;
   }
 
   return item.createdBy === user.uid || item.userId === user.uid || item.residentId === user.uid;
@@ -96,24 +101,34 @@ function canSee(module, item, user) {
 
 function addNotification(module, item) {
   const [icon, title] = LABELS[module] || ['🔔', 'Nueva actualización'];
-  const detail = describe(module, item);
+  const sourceId = `${module}-${item.id}`;
+  if (notifications.some((entry) => entry.sourceId === sourceId)) return;
+
   const notification = {
-    id: `${module}-${item.id}-${Date.now()}`,
+    id: crypto.randomUUID(),
+    sourceId,
     module,
     icon,
     title,
-    detail,
-    time: new Date().toLocaleTimeString('es-PR', { hour: 'numeric', minute: '2-digit' })
+    detail: describe(module, item),
+    createdAt: Date.now(),
+    read: false
   };
   notifications.unshift(notification);
-  notifications = notifications.slice(0, 30);
-  unread += 1;
+  notifications = notifications.slice(0, 50);
+  persistNotifications();
+  unread = notifications.filter((entry) => !entry.read).length;
   updateBadge();
   showToast(notification);
 
   if (navigator.vibrate) navigator.vibrate(120);
   if (document.hidden && 'Notification' in window && Notification.permission === 'granted') {
-    new Notification(`${icon} ${title}`, { body: detail, icon: './neighbor-icon.svg' });
+    const browserNotification = new Notification(`${icon} ${title}`, { body: notification.detail, icon: './neighbor-icon.svg', tag: sourceId });
+    browserNotification.onclick = () => {
+      window.focus();
+      openTargetModule(module);
+      browserNotification.close();
+    };
   }
 }
 
@@ -126,21 +141,35 @@ function describe(module, item) {
   return 'Hay una actualización nueva.';
 }
 
+function updateLiveCounters(module, items) {
+  const pending = items.filter((item) => ['pending', 'open', 'in-progress'].includes(String(item.status || '').toLowerCase())).length;
+  const aliases = {
+    packages: ['paquetes', 'registrar paquete'],
+    incidents: ['incidencias', 'casos', 'reportar incidencia'],
+    reservations: ['reservaciones', 'reservar gazebo'],
+    announcements: ['comunicados', 'avisos'],
+    visits: ['visitas', 'registrar visita']
+  }[module] || [];
+
+  document.querySelectorAll('.action-card').forEach((card) => {
+    const text = card.textContent.toLowerCase();
+    if (!aliases.some((alias) => text.includes(alias))) return;
+    const detail = card.querySelector('small');
+    if (!detail) return;
+    detail.textContent = pending ? `${pending} pendiente${pending === 1 ? '' : 's'}` : `${items.length} registro${items.length === 1 ? '' : 's'}`;
+  });
+}
+
 function refreshOpenModule(module) {
   const dialog = document.querySelector('#featureDialog');
   if (!dialog?.open) return;
   const currentTitle = document.querySelector('#dialogTitle')?.textContent?.toLowerCase() || '';
   const names = {
-    packages: ['paquetes'],
-    incidents: ['incidencias'],
-    reservations: ['reservaciones'],
-    announcements: ['comunicados', 'avisos'],
-    visits: ['visitas']
+    packages: ['paquetes'], incidents: ['incidencias'], reservations: ['reservaciones'],
+    announcements: ['comunicados', 'avisos'], visits: ['visitas']
   }[module] || [];
   if (!names.some((name) => currentTitle.includes(name))) return;
-
-  const actionButtons = [...document.querySelectorAll('.action-card, .nav-item')];
-  const trigger = actionButtons.find((button) => names.some((name) => button.textContent.toLowerCase().includes(name)));
+  const trigger = findModuleTrigger(module);
   if (trigger) setTimeout(() => trigger.click(), 80);
 }
 
@@ -148,9 +177,10 @@ function createNotificationUi() {
   if (document.querySelector('#neighborBell')) return;
   const style = document.createElement('style');
   style.textContent = `
-    .neighbor-bell{position:fixed;right:18px;bottom:86px;z-index:50;width:50px;height:50px;border:0;border-radius:50%;background:#071522;color:white;font-size:22px;box-shadow:0 10px 28px rgba(0,0,0,.24);display:none;align-items:center;justify-content:center}
-    .neighbor-bell.visible{display:flex}.neighbor-badge{position:absolute;right:-3px;top:-3px;min-width:21px;height:21px;padding:0 5px;border-radius:11px;background:#dc2626;color:#fff;font:700 12px/21px Inter,sans-serif;display:none}.neighbor-badge.visible{display:block}
-    .neighbor-toast{position:fixed;left:16px;right:16px;top:calc(env(safe-area-inset-top) + 14px);z-index:100;background:#fff;border-radius:16px;padding:14px 16px;box-shadow:0 16px 45px rgba(0,0,0,.24);display:flex;gap:12px;align-items:center;animation:neighborIn .22s ease}.neighbor-toast span{font-size:24px}.neighbor-toast strong,.neighbor-toast small{display:block}.neighbor-toast small{margin-top:3px;color:#52606d}@keyframes neighborIn{from{transform:translateY(-20px);opacity:0}to{transform:none;opacity:1}}
+    .neighbor-bell{position:fixed;right:18px;bottom:86px;z-index:50;width:50px;height:50px;border:0;border-radius:50%;background:#071522;color:white;font-size:22px;box-shadow:0 10px 28px rgba(0,0,0,.24);display:none;align-items:center;justify-content:center}.neighbor-bell.visible{display:flex}
+    .neighbor-badge{position:absolute;right:-3px;top:-3px;min-width:21px;height:21px;padding:0 5px;border-radius:11px;background:#dc2626;color:#fff;font:700 12px/21px Inter,sans-serif;display:none}.neighbor-badge.visible{display:block}
+    .neighbor-toast{position:fixed;left:16px;right:16px;top:calc(env(safe-area-inset-top) + 14px);z-index:100;background:#fff;border:0;border-radius:16px;padding:14px 16px;box-shadow:0 16px 45px rgba(0,0,0,.24);display:flex;gap:12px;align-items:center;text-align:left;animation:neighborIn .22s ease}.neighbor-toast span{font-size:24px}.neighbor-toast strong,.neighbor-toast small{display:block}.neighbor-toast small{margin-top:3px;color:#52606d}
+    .notification-row{width:100%;border:0;background:transparent;text-align:left;padding:0}.notification-row.unread strong:after{content:' •';color:#dc2626}.notification-meta{font-size:12px;color:#667085;margin-top:4px}.notification-actions{display:flex;justify-content:flex-end;gap:8px;margin-bottom:12px}@keyframes neighborIn{from{transform:translateY(-20px);opacity:0}to{transform:none;opacity:1}}
   `;
   document.head.appendChild(style);
 
@@ -164,8 +194,9 @@ function createNotificationUi() {
   document.body.appendChild(bell);
 
   const appShell = document.querySelector('#appShell');
-  new MutationObserver(() => bell.classList.toggle('visible', !appShell?.classList.contains('hidden')))
-    .observe(appShell, { attributes: true, attributeFilter: ['class'] });
+  const syncVisibility = () => bell.classList.toggle('visible', !appShell?.classList.contains('hidden'));
+  syncVisibility();
+  new MutationObserver(syncVisibility).observe(appShell, { attributes: true, attributeFilter: ['class'] });
 }
 
 function updateBadge() {
@@ -178,39 +209,78 @@ function updateBadge() {
 
 function showToast(notification) {
   document.querySelector('.neighbor-toast')?.remove();
-  const toast = document.createElement('div');
+  const toast = document.createElement('button');
+  toast.type = 'button';
   toast.className = 'neighbor-toast';
   toast.innerHTML = `<span>${notification.icon}</span><div><strong>${escapeHtml(notification.title)}</strong><small>${escapeHtml(notification.detail)}</small></div>`;
+  toast.onclick = () => { toast.remove(); openTargetModule(notification.module); };
   document.body.appendChild(toast);
-  setTimeout(() => toast.remove(), 4200);
+  setTimeout(() => toast.remove(), 5000);
 }
 
 async function openNotificationCenter() {
-  unread = 0;
-  updateBadge();
-  if ('Notification' in window && Notification.permission === 'default') {
-    Notification.requestPermission().catch(() => {});
-  }
+  if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission().catch(() => {});
   const dialog = document.querySelector('#featureDialog');
   const eyebrow = document.querySelector('#dialogEyebrow');
   const title = document.querySelector('#dialogTitle');
   const body = document.querySelector('#dialogBody');
   const form = document.querySelector('#dialogForm');
   if (!dialog || !body) return;
+
   form.onsubmit = null;
   eyebrow.textContent = 'Neighbor en vivo';
   title.textContent = 'Notificaciones';
-  body.innerHTML = notifications.length
-    ? `<div class="module-list">${notifications.map((item) => `<article><strong>${item.icon} ${escapeHtml(item.title)}</strong><p>${escapeHtml(item.detail)} · ${escapeHtml(item.time)}</p></article>`).join('')}</div>`
-    : '<div class="empty-state">No hay notificaciones nuevas.</div>';
+  body.innerHTML = notifications.length ? `
+    <div class="notification-actions"><button id="markAllRead" type="button">Marcar leídas</button><button id="clearNotifications" type="button">Limpiar</button></div>
+    <div class="module-list">${notifications.map(notificationRow).join('')}</div>`
+    : '<div class="empty-state">No hay notificaciones.</div>';
   dialog.showModal();
+
+  document.querySelector('#markAllRead')?.addEventListener('click', () => {
+    notifications = notifications.map((item) => ({ ...item, read: true }));
+    persistNotifications(); unread = 0; updateBadge(); openNotificationCenter();
+  });
+  document.querySelector('#clearNotifications')?.addEventListener('click', () => {
+    notifications = []; persistNotifications(); unread = 0; updateBadge(); openNotificationCenter();
+  });
+  document.querySelectorAll('[data-notification-id]').forEach((button) => button.addEventListener('click', () => {
+    const item = notifications.find((entry) => entry.id === button.dataset.notificationId);
+    if (!item) return;
+    item.read = true; persistNotifications(); unread = notifications.filter((entry) => !entry.read).length; updateBadge();
+    dialog.close(); openTargetModule(item.module);
+  }));
 }
 
-function stopListeners() {
-  unsubscribeAll.forEach((unsubscribe) => unsubscribe());
-  unsubscribeAll = [];
+function notificationRow(item) {
+  return `<article><button type="button" class="notification-row ${item.read ? '' : 'unread'}" data-notification-id="${escapeHtml(item.id)}"><strong>${item.icon} ${escapeHtml(item.title)}</strong><p>${escapeHtml(item.detail)}</p><div class="notification-meta">${relativeTime(item.createdAt)}</div></button></article>`;
 }
 
-function escapeHtml(value) {
-  return String(value ?? '').replace(/[&<>'"]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[char]));
+function openTargetModule(module) {
+  const trigger = findModuleTrigger(module);
+  if (trigger) trigger.click();
 }
+
+function findModuleTrigger(module) {
+  const names = {
+    packages: ['paquetes', 'registrar paquete'], incidents: ['incidencias', 'casos', 'reportar incidencia'],
+    reservations: ['reservaciones', 'reservar gazebo'], announcements: ['comunicados', 'avisos'],
+    visits: ['visitas', 'registrar visita']
+  }[module] || [];
+  return [...document.querySelectorAll('.action-card, .nav-item')].find((button) => names.some((name) => button.textContent.toLowerCase().includes(name)));
+}
+
+function storageKey() { return `${STORAGE_PREFIX}-${currentUid || 'guest'}`; }
+function loadNotifications() {
+  try { const value = JSON.parse(localStorage.getItem(storageKey())); return Array.isArray(value) ? value : []; } catch { return []; }
+}
+function persistNotifications() { localStorage.setItem(storageKey(), JSON.stringify(notifications)); }
+function relativeTime(timestamp) {
+  const seconds = Math.max(1, Math.floor((Date.now() - Number(timestamp || Date.now())) / 1000));
+  if (seconds < 60) return 'Ahora mismo';
+  const minutes = Math.floor(seconds / 60); if (minutes < 60) return `Hace ${minutes} min`;
+  const hours = Math.floor(minutes / 60); if (hours < 24) return `Hace ${hours} h`;
+  const days = Math.floor(hours / 24); return `Hace ${days} día${days === 1 ? '' : 's'}`;
+}
+
+function stopListeners() { unsubscribeAll.forEach((unsubscribe) => unsubscribe()); unsubscribeAll = []; }
+function escapeHtml(value) { return String(value ?? '').replace(/[&<>'"]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[char])); }
