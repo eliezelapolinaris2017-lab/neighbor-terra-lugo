@@ -11,7 +11,6 @@ export async function initializeNeighborFirebase() {
     const appModule = await import('https://www.gstatic.com/firebasejs/12.1.0/firebase-app.js');
     const authModule = await import('https://www.gstatic.com/firebasejs/12.1.0/firebase-auth.js');
     const firestoreModule = await import('https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js');
-
     const app = appModule.initializeApp(firebaseConfig);
     auth = authModule.getAuth(app);
     db = firestoreModule.getFirestore(app);
@@ -103,39 +102,62 @@ export async function createResident(resident) {
   const { addDoc, collection, serverTimestamp } = await import('https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js');
   const name = String(resident.name || '').trim();
   if (!name) throw new Error('El nombre es requerido.');
-  const reference = await addDoc(collection(db, ...appRoot(), 'residents'), {
-    name,
-    homeId:String(resident.homeId || '').trim().toUpperCase(),
-    email:String(resident.email || '').trim().toLowerCase(),
-    phone:String(resident.phone || '').trim(),
-    residentType:resident.residentType || 'owner',
-    status:resident.status || 'active',
-    emergencyContact:String(resident.emergencyContact || '').trim(),
-    createdBy:auth.currentUser.uid,
-    createdAt:serverTimestamp(),
-    updatedAt:serverTimestamp()
-  });
+  const reference = await addDoc(collection(db, ...appRoot(), 'residents'), { name, homeId:String(resident.homeId || '').trim().toUpperCase(), email:String(resident.email || '').trim().toLowerCase(), phone:String(resident.phone || '').trim(), residentType:resident.residentType || 'owner', status:resident.status || 'active', emergencyContact:String(resident.emergencyContact || '').trim(), createdBy:auth.currentUser.uid, createdAt:serverTimestamp(), updatedAt:serverTimestamp() });
   return reference.id;
 }
 
 export async function updateResident(id, changes) {
   if (!db || !auth?.currentUser) throw new Error('Inicia sesión para editar en Firebase.');
   const { doc, updateDoc, serverTimestamp } = await import('https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js');
-  await updateDoc(doc(db, ...appRoot(), 'residents', id), {
-    name:String(changes.name || '').trim(),
-    homeId:String(changes.homeId || '').trim().toUpperCase(),
-    email:String(changes.email || '').trim().toLowerCase(),
-    phone:String(changes.phone || '').trim(),
-    residentType:changes.residentType || 'owner',
-    status:changes.status || 'active',
-    emergencyContact:String(changes.emergencyContact || '').trim(),
-    updatedBy:auth.currentUser.uid,
-    updatedAt:serverTimestamp()
-  });
+  await updateDoc(doc(db, ...appRoot(), 'residents', id), { name:String(changes.name || '').trim(), homeId:String(changes.homeId || '').trim().toUpperCase(), email:String(changes.email || '').trim().toLowerCase(), phone:String(changes.phone || '').trim(), residentType:changes.residentType || 'owner', status:changes.status || 'active', emergencyContact:String(changes.emergencyContact || '').trim(), updatedBy:auth.currentUser.uid, updatedAt:serverTimestamp() });
 }
 
 export async function deleteResident(id) {
   if (!db || !auth?.currentUser) throw new Error('Inicia sesión para eliminar en Firebase.');
   const { deleteDoc, doc } = await import('https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js');
   await deleteDoc(doc(db, ...appRoot(), 'residents', id));
+}
+
+export async function listVehicles() {
+  if (!db) return [];
+  const { collection, getDocs, orderBy, query } = await import('https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js');
+  const snapshot = await getDocs(query(collection(db, ...appRoot(), 'vehicles'), orderBy('plate')));
+  return snapshot.docs.map((item) => ({ id:item.id, ...item.data() }));
+}
+
+export async function createVehicle(vehicle) {
+  if (!db || !auth?.currentUser) throw new Error('Inicia sesión para guardar en Firebase.');
+  const { doc, getDoc, setDoc, serverTimestamp } = await import('https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js');
+  const plate = String(vehicle.plate || '').trim().toUpperCase();
+  if (!plate) throw new Error('La tablilla es requerida.');
+  const ref = doc(db, ...appRoot(), 'vehicles', plate);
+  if ((await getDoc(ref)).exists()) throw new Error('Esa tablilla ya está registrada.');
+  await setDoc(ref, normalizeVehicle(vehicle, { createdBy:auth.currentUser.uid, createdAt:serverTimestamp(), updatedAt:serverTimestamp() }));
+  return plate;
+}
+
+export async function updateVehicle(id, changes) {
+  if (!db || !auth?.currentUser) throw new Error('Inicia sesión para editar en Firebase.');
+  const { doc, updateDoc, serverTimestamp } = await import('https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js');
+  await updateDoc(doc(db, ...appRoot(), 'vehicles', id), normalizeVehicle(changes, { updatedBy:auth.currentUser.uid, updatedAt:serverTimestamp() }));
+}
+
+export async function deleteVehicle(id) {
+  if (!db || !auth?.currentUser) throw new Error('Inicia sesión para eliminar en Firebase.');
+  const { deleteDoc, doc } = await import('https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js');
+  await deleteDoc(doc(db, ...appRoot(), 'vehicles', id));
+}
+
+function normalizeVehicle(vehicle, audit = {}) {
+  return {
+    plate:String(vehicle.plate || '').trim().toUpperCase(),
+    homeId:String(vehicle.homeId || '').trim().toUpperCase(),
+    residentName:String(vehicle.residentName || '').trim(),
+    make:String(vehicle.make || '').trim(),
+    model:String(vehicle.model || '').trim(),
+    year:Number(vehicle.year || 0) || null,
+    color:String(vehicle.color || '').trim(),
+    status:vehicle.status || 'active',
+    ...audit
+  };
 }
