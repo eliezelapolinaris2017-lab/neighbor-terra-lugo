@@ -1,0 +1,21 @@
+{
+  "name": "Neighbor · Terra Lugo",
+  "short_name": "Neighbor",
+  "description": "Plataforma comunitaria de Terra Lugo, Cupey Bajo.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#071522",
+  "theme_color": "#071522",
+  "orientation": "portrait-primary",
+  "lang": "es-PR",
+  "categories": ["lifestyle", "utilities", "social"],
+  "icons": [
+    {
+      "src": "neighbor-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
