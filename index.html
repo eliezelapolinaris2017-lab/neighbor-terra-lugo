@@ -80,7 +80,7 @@
 
   <dialog id="featureDialog">
     <form method="dialog" id="dialogForm">
-      <button class="dialog-close" value="cancel" aria-label="Cerrar">×</button>
+      <button class="dialog-close" id="dialogClose" type="button" aria-label="Cerrar">×</button>
       <p class="eyebrow" id="dialogEyebrow">Neighbor</p>
       <h2 id="dialogTitle">Módulo</h2>
       <div id="dialogBody"></div>
@@ -89,6 +89,14 @@
 
   <script type="module" src="app.js"></script>
   <script>
+    const featureDialog = document.querySelector('#featureDialog');
+    document.querySelector('#dialogClose').addEventListener('click', () => featureDialog.close());
+    featureDialog.addEventListener('click', (event) => {
+      const box = featureDialog.getBoundingClientRect();
+      const outside = event.clientX < box.left || event.clientX > box.right || event.clientY < box.top || event.clientY > box.bottom;
+      if (outside) featureDialog.close();
+    });
+
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => navigator.serviceWorker.register('./service-worker.js').catch(console.error));
     }
