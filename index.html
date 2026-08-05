@@ -17,12 +17,13 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css" />
   <link rel="stylesheet" href="hero.css" />
+  <link rel="stylesheet" href="homes.css" />
 </head>
 <body>
   <section class="login-screen" id="loginScreen">
     <div class="login-card">
       <div class="brand-lockup"><span class="brand-mark">N</span><div><strong>Neighbor</strong><small>Terra Lugo · Cupey Bajo</small></div></div>
-      <p class="eyebrow">Neighbor Alpha 0.6</p>
+      <p class="eyebrow">Neighbor Alpha 0.7</p>
       <h1>Bienvenido</h1>
       <p class="login-copy">Accede con tu cuenta o utiliza un perfil de demostración.</p>
 
@@ -37,7 +38,7 @@
       <div class="role-grid">
         <button class="role-card" type="button" data-role="resident"><span>🏠</span><strong>Residente</strong><small>Visitas, paquetes, reservas y cuenta</small></button>
         <button class="role-card" type="button" data-role="guard"><span>🛡️</span><strong>Seguridad</strong><small>Entradas, QR, paquetes e incidentes</small></button>
-        <button class="role-card" type="button" data-role="admin"><span>🏢</span><strong>Administración</strong><small>Residentes, avisos, cobros y reportes</small></button>
+        <button class="role-card" type="button" data-role="admin"><span>🏢</span><strong>Administración</strong><small>Residencias, avisos, cobros y reportes</small></button>
       </div>
     </div>
   </section>
@@ -89,6 +90,7 @@
   </dialog>
 
   <script type="module" src="app.js"></script>
+  <script type="module" src="homes-module.js"></script>
   <script>
     const featureDialog = document.querySelector('#featureDialog');
     document.querySelector('#dialogClose').addEventListener('click', () => featureDialog.close());
