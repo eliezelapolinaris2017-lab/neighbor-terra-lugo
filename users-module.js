@@ -10,8 +10,10 @@ const dialogForm = document.querySelector('#dialogForm');
 let users = [];
 let db = null;
 let auth = null;
-let functions = null;
 let firebaseAvailable = false;
+let firebaseAppModule = null;
+let firebaseAuthModule = null;
+let firestoreModule = null;
 
 const roles = {
   admin: 'Administrador',
@@ -34,14 +36,12 @@ document.addEventListener('click', async (event) => {
 
 async function initializeAccess() {
   try {
-    const appModule = await import('https://www.gstatic.com/firebasejs/12.1.0/firebase-app.js');
-    const authModule = await import('https://www.gstatic.com/firebasejs/12.1.0/firebase-auth.js');
-    const firestoreModule = await import('https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js');
-    const functionsModule = await import('https://www.gstatic.com/firebasejs/12.1.0/firebase-functions.js');
-    const app = appModule.getApps().length ? appModule.getApp() : appModule.initializeApp(firebaseConfig);
-    auth = authModule.getAuth(app);
+    firebaseAppModule = await import('https://www.gstatic.com/firebasejs/12.1.0/firebase-app.js');
+    firebaseAuthModule = await import('https://www.gstatic.com/firebasejs/12.1.0/firebase-auth.js');
+    firestoreModule = await import('https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js');
+    const app = firebaseAppModule.getApps().length ? firebaseAppModule.getApp() : firebaseAppModule.initializeApp(firebaseConfig);
+    auth = firebaseAuthModule.getAuth(app);
     db = firestoreModule.getFirestore(app);
-    functions = functionsModule.getFunctions(app, 'us-east1');
     firebaseAvailable = true;
   } catch (error) {
     console.warn('Usuarios y roles operarán en modo local.', error);
@@ -64,8 +64,12 @@ async function openUsers() {
 }
 
 async function listFirebaseUsers() {
-  const { collection, getDocs, orderBy, query } = await import('https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js');
-  const snapshot = await getDocs(query(collection(db, ...rootPath(), 'users'), orderBy('name')));
+  const snapshot = await firestoreModule.getDocs(
+    firestoreModule.query(
+      firestoreModule.collection(db, ...rootPath(), 'users'),
+      firestoreModule.orderBy('name')
+    )
+  );
   return snapshot.docs.map((item) => ({ id: item.id, ...item.data() }));
 }
 
@@ -111,16 +115,83 @@ async function createUser(event) {
   event.preventDefault();
   const message = document.querySelector('#newUserMessage');
   const data = Object.fromEntries(new FormData(dialogForm).entries());
+  const name = String(data.name || '').trim();
+  const email = String(data.email || '').trim().toLowerCase();
+  const homeId = String(data.homeId || '').trim().toUpperCase();
+  const phone = String(data.phone || '').trim();
+  const role = roles[data.role] ? data.role : 'resident';
   message.textContent = 'Creando cuenta…';
+
   try {
-    if (!firebaseAvailable || !auth?.currentUser || !functions) throw new Error('Firebase Functions no está disponible.');
-    const { httpsCallable } = await import('https://www.gstatic.com/firebasejs/12.1.0/firebase-functions.js');
-    await httpsCallable(functions, 'createNeighborUser')(data);
-    await sendPasswordReset(data.email);
+    if (!firebaseAvailable || !auth?.currentUser) throw new Error('Debes iniciar sesión como administrador.');
+    if (!name || !email) throw new Error('Nombre y correo son requeridos.');
+    if (users.some((user) => String(user.email || '').toLowerCase() === email)) throw new Error('Ese correo ya está registrado en Neighbor.');
+
+    const temporaryPassword = createTemporaryPassword();
+    const secondaryName = `neighbor-user-${Date.now()}`;
+    const secondaryApp = firebaseAppModule.initializeApp(firebaseConfig, secondaryName);
+    const secondaryAuth = firebaseAuthModule.getAuth(secondaryApp);
+    let credential;
+
+    try {
+      credential = await firebaseAuthModule.createUserWithEmailAndPassword(secondaryAuth, email, temporaryPassword);
+      await firebaseAuthModule.updateProfile(credential.user, { displayName: name });
+    } finally {
+      await firebaseAuthModule.signOut(secondaryAuth).catch(() => {});
+      await firebaseAppModule.deleteApp(secondaryApp).catch(() => {});
+    }
+
+    const uid = credential.user.uid;
+    const initials = name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase();
+    const batch = firestoreModule.writeBatch(db);
+    const userRef = firestoreModule.doc(db, ...rootPath(), 'users', uid);
+
+    batch.set(userRef, {
+      uid, name, initials, email, phone, homeId, role,
+      status: 'active', communityId: COMMUNITY_ID,
+      createdBy: auth.currentUser.uid,
+      createdAt: firestoreModule.serverTimestamp(),
+      updatedAt: firestoreModule.serverTimestamp()
+    }, { merge: true });
+
+    if (role === 'resident') {
+      const residentQuery = firestoreModule.query(
+        firestoreModule.collection(db, ...rootPath(), 'residents'),
+        firestoreModule.where('email', '==', email),
+        firestoreModule.limit(1)
+      );
+      const residentSnapshot = await firestoreModule.getDocs(residentQuery);
+      if (residentSnapshot.empty) {
+        const residentRef = firestoreModule.doc(firestoreModule.collection(db, ...rootPath(), 'residents'));
+        batch.set(residentRef, {
+          name, email, phone, homeId, residentType: 'owner', status: 'active', userId: uid,
+          createdBy: auth.currentUser.uid,
+          createdAt: firestoreModule.serverTimestamp(),
+          updatedAt: firestoreModule.serverTimestamp()
+        });
+      } else {
+        batch.update(residentSnapshot.docs[0].ref, {
+          userId: uid, status: 'active', updatedBy: auth.currentUser.uid,
+          updatedAt: firestoreModule.serverTimestamp()
+        });
+      }
+    }
+
+    const activityRef = firestoreModule.doc(firestoreModule.collection(db, ...rootPath(), 'activity'));
+    batch.set(activityRef, {
+      type: 'user-created', icon: '👤', title: 'Usuario creado',
+      detail: `${name} · ${email}`, targetUserId: uid,
+      userId: auth.currentUser.uid, communityId: COMMUNITY_ID,
+      createdAt: firestoreModule.serverTimestamp()
+    });
+
+    await batch.commit();
+    await sendPasswordReset(email);
     users = await listFirebaseUsers();
     renderUsers();
+    alert(`Cuenta creada. Se envió un enlace de acceso a ${email}.`);
   } catch (error) {
-    message.textContent = cleanFunctionError(error);
+    message.textContent = cleanFirebaseError(error);
   }
 }
 
@@ -142,19 +213,37 @@ async function saveAccess(event, user) {
   event.preventDefault();
   const data = Object.fromEntries(new FormData(dialogForm).entries());
   const message = document.querySelector('#accessMessage');
+  const role = roles[data.role] ? data.role : 'resident';
+  const status = ['active', 'pending', 'inactive'].includes(data.status) ? data.status : 'active';
+  const activeAdmins = users.filter((item) => item.role === 'admin' && item.status === 'active');
+
+  if (user.role === 'admin' && user.status === 'active' && (role !== 'admin' || status !== 'active') && activeAdmins.length <= 1) {
+    message.textContent = 'Debe permanecer al menos un administrador activo.';
+    return;
+  }
+
   message.textContent = 'Guardando…';
   try {
-    if (firebaseAvailable && auth?.currentUser && functions) {
-      const { httpsCallable } = await import('https://www.gstatic.com/firebasejs/12.1.0/firebase-functions.js');
-      await httpsCallable(functions, 'updateNeighborUserAccess')({ uid: user.id || user.uid, role: data.role, status: data.status });
+    if (firebaseAvailable && auth?.currentUser) {
+      const uid = user.id || user.uid;
+      await firestoreModule.updateDoc(firestoreModule.doc(db, ...rootPath(), 'users', uid), {
+        role, status, updatedBy: auth.currentUser.uid,
+        updatedAt: firestoreModule.serverTimestamp()
+      });
+      await firestoreModule.addDoc(firestoreModule.collection(db, ...rootPath(), 'activity'), {
+        type: 'access-updated', icon: '🔐', title: 'Acceso actualizado',
+        detail: `${user.name || user.email} · ${role} · ${status}`,
+        targetUserId: uid, userId: auth.currentUser.uid,
+        communityId: COMMUNITY_ID, createdAt: firestoreModule.serverTimestamp()
+      });
       users = await listFirebaseUsers();
     } else {
-      users = users.map((item) => (item.id || item.uid) === (user.id || user.uid) ? { ...item, role: data.role, status: data.status } : item);
+      users = users.map((item) => (item.id || item.uid) === (user.id || user.uid) ? { ...item, role, status } : item);
       localStorage.setItem(LOCAL_KEY, JSON.stringify(users));
     }
     renderUsers();
   } catch (error) {
-    message.textContent = cleanFunctionError(error);
+    message.textContent = cleanFirebaseError(error);
   }
 }
 
@@ -165,13 +254,18 @@ async function sendAccessEmail(id) {
     await sendPasswordReset(user.email);
     alert(`Enlace de acceso enviado a ${user.email}.`);
   } catch (error) {
-    alert(error.message || 'No se pudo enviar el acceso.');
+    alert(cleanFirebaseError(error));
   }
 }
 
 async function sendPasswordReset(email) {
-  const { sendPasswordResetEmail } = await import('https://www.gstatic.com/firebasejs/12.1.0/firebase-auth.js');
-  await sendPasswordResetEmail(auth, String(email || '').trim().toLowerCase());
+  await firebaseAuthModule.sendPasswordResetEmail(auth, String(email || '').trim().toLowerCase());
+}
+
+function createTemporaryPassword() {
+  const values = new Uint32Array(6);
+  crypto.getRandomValues(values);
+  return `N!${Array.from(values).map((value) => value.toString(36)).join('')}9a`;
 }
 
 function loadLocalUsers() {
@@ -185,8 +279,13 @@ function loadLocalUsers() {
   return seed;
 }
 
-function cleanFunctionError(error) {
-  return String(error?.message || 'No se pudo completar la operación.').replace(/^FirebaseError:\s*/i, '').replace(/^functions\/[\w-]+:\s*/i, '');
+function cleanFirebaseError(error) {
+  const code = String(error?.code || '');
+  if (code.includes('email-already-in-use')) return 'Ese correo ya tiene una cuenta en Firebase Authentication.';
+  if (code.includes('permission-denied')) return 'No tienes permiso para realizar esta acción.';
+  if (code.includes('weak-password')) return 'Firebase rechazó la contraseña temporal.';
+  if (code.includes('network-request-failed')) return 'No hay conexión con Firebase.';
+  return String(error?.message || 'No se pudo completar la operación.').replace(/^FirebaseError:\s*/i, '');
 }
 
 function escapeHtml(value) {
