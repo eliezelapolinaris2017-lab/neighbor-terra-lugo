@@ -1,40 +1,59 @@
 import { createResident, deleteResident, isFirebaseReady, listResidents, updateResident } from './firebase-service.js';
 
 const LOCAL_KEY = 'neighbor-terra-lugo-residents';
+const CACHE_KEY = 'neighbor-terra-lugo-residents-cache';
 const dialog = document.querySelector('#featureDialog');
 const dialogTitle = document.querySelector('#dialogTitle');
 const dialogEyebrow = document.querySelector('#dialogEyebrow');
 const dialogBody = document.querySelector('#dialogBody');
 const dialogForm = document.querySelector('#dialogForm');
 
-let residents = [];
+let residents = loadCache();
 let editingId = null;
+let syncPromise = null;
+
+prefetchResidents();
 
 document.addEventListener('click', async (event) => {
   const card = event.target.closest('.action-card, .nav-item');
   if (!card || !card.textContent.toLowerCase().includes('residentes')) return;
   event.preventDefault();
   event.stopImmediatePropagation();
-  await openResidents();
+  openResidents();
 }, true);
 
-async function openResidents() {
+function openResidents() {
   dialogEyebrow.textContent = 'Neighbor Admin';
   dialogTitle.textContent = 'Residentes';
-  dialogBody.innerHTML = '<div class="empty-state">Cargando residentes…</div>';
-  if (!dialog.open) dialog.showModal();
-  try {
-    residents = isFirebaseReady() ? await listResidents() : loadLocal();
-  } catch (error) {
-    console.error(error);
-    residents = loadLocal();
-  }
+  residents = residents.length ? residents : loadCache();
   renderResidents();
+  if (!dialog.open) dialog.showModal();
+  syncResidents(true);
+}
+
+async function prefetchResidents() {
+  if (!isFirebaseReady()) return;
+  await syncResidents(false);
+}
+
+async function syncResidents(renderWhenOpen = false) {
+  if (!isFirebaseReady()) return;
+  if (syncPromise) return syncPromise;
+  syncPromise = listResidents()
+    .then((items) => {
+      residents = Array.isArray(items) ? items : [];
+      saveCache(residents);
+      if (renderWhenOpen && dialog.open && dialogTitle.textContent.toLowerCase().includes('residentes')) renderResidents();
+      window.dispatchEvent(new CustomEvent('neighbor:module-synced', { detail: { module: 'residents', count: residents.length } }));
+    })
+    .catch((error) => console.warn('No se pudieron sincronizar residentes.', error))
+    .finally(() => { syncPromise = null; });
+  return syncPromise;
 }
 
 function renderResidents(filter = '') {
   const query = filter.trim().toLowerCase();
-  const filtered = residents.filter((resident) => `${resident.name} ${resident.homeId || ''} ${resident.email || ''} ${resident.phone || ''}`.toLowerCase().includes(query));
+  const filtered = residents.filter((resident) => `${resident.name || ''} ${resident.homeId || ''} ${resident.email || ''} ${resident.phone || ''}`.toLowerCase().includes(query));
   dialogBody.innerHTML = `
     <div class="homes-toolbar">
       <input id="residentSearch" type="search" placeholder="Buscar nombre, unidad o teléfono" value="${escapeHtml(filter)}">
@@ -53,7 +72,7 @@ function residentCard(resident) {
   const type = resident.residentType === 'tenant' ? 'Inquilino' : resident.residentType === 'authorized' ? 'Autorizado' : 'Propietario';
   const status = resident.status === 'inactive' ? 'Inactivo' : 'Activo';
   return `<article class="home-row">
-    <div><strong>${escapeHtml(resident.name)}</strong><p>${escapeHtml(resident.homeId || 'Sin unidad')} · ${type} · ${status}${resident.phone ? ` · ${escapeHtml(resident.phone)}` : ''}</p></div>
+    <div><strong>${escapeHtml(resident.name || 'Sin nombre')}</strong><p>${escapeHtml(resident.homeId || 'Sin unidad')} · ${type} · ${status}${resident.phone ? ` · ${escapeHtml(resident.phone)}` : ''}</p></div>
     <div class="row-actions"><button type="button" data-edit-resident="${escapeHtml(resident.id)}">Editar</button><button type="button" class="danger-link" data-delete-resident="${escapeHtml(resident.id)}">Eliminar</button></div>
   </article>`;
 }
@@ -86,10 +105,11 @@ async function saveResident(event) {
   try {
     if (isFirebaseReady()) {
       if (editingId) await updateResident(editingId, data); else await createResident(data);
-      residents = await listResidents();
+      await syncResidents(false);
     } else {
       saveLocal(data, editingId);
       residents = loadLocal();
+      saveCache(residents);
     }
     editingId = null;
     dialogTitle.textContent = 'Residentes';
@@ -101,10 +121,31 @@ async function removeResident(id) {
   const resident = residents.find((item) => item.id === id);
   if (!resident || !confirm(`¿Eliminar a ${resident.name}?`)) return;
   try {
-    if (isFirebaseReady()) { await deleteResident(id); residents = await listResidents(); }
-    else { residents = loadLocal().filter((item) => item.id !== id); localStorage.setItem(LOCAL_KEY, JSON.stringify(residents)); }
-    renderResidents();
+    if (isFirebaseReady()) {
+      await deleteResident(id);
+      residents = residents.filter((item) => item.id !== id);
+      saveCache(residents);
+      renderResidents();
+      syncResidents(true);
+    } else {
+      residents = loadLocal().filter((item) => item.id !== id);
+      localStorage.setItem(LOCAL_KEY, JSON.stringify(residents));
+      saveCache(residents);
+      renderResidents();
+    }
   } catch (error) { alert(error.message || 'No se pudo eliminar.'); }
+}
+
+function loadCache() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(CACHE_KEY));
+    if (Array.isArray(saved)) return saved;
+  } catch {}
+  return loadLocal();
+}
+
+function saveCache(items) {
+  localStorage.setItem(CACHE_KEY, JSON.stringify(Array.isArray(items) ? items : []));
 }
 
 function loadLocal() {
