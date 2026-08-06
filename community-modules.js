@@ -1,222 +1,111 @@
 import { firebaseConfig, COMMUNITY_ID, APP_NAMESPACE } from './firebase-config.js';
 
-const dialog = document.querySelector('#featureDialog');
-const title = document.querySelector('#dialogTitle');
-const eyebrow = document.querySelector('#dialogEyebrow');
-const body = document.querySelector('#dialogBody');
-const form = document.querySelector('#dialogForm');
-
-let app, auth, db;
-let firebaseReady = false;
-let currentProfile = { role: 'resident', status: 'active' };
-const root = () => ['apps', APP_NAMESPACE, 'communities', COMMUNITY_ID];
+const dialog=document.querySelector('#featureDialog'), title=document.querySelector('#dialogTitle'), eyebrow=document.querySelector('#dialogEyebrow'), body=document.querySelector('#dialogBody'), form=document.querySelector('#dialogForm');
+const labels={packages:'Paquetes',incidents:'Incidencias',reservations:'Reservaciones',announcements:'Comunicados'};
+const icons={packages:'📦',incidents:'🛠️',reservations:'📅',announcements:'📢'};
+const modules=['packages','incidents','reservations','announcements'];
+let auth,db,ready=false,profile={role:'resident',status:'active'},activeModule=null;
+const root=()=>['apps',APP_NAMESPACE,'communities',COMMUNITY_ID];
+const cacheKey=m=>`neighbor-${COMMUNITY_ID}-${m}`;
 
 init();
-
 async function init(){
   try{
-    const appMod = await import('https://www.gstatic.com/firebasejs/12.1.0/firebase-app.js');
-    const authMod = await import('https://www.gstatic.com/firebasejs/12.1.0/firebase-auth.js');
-    const fs = await import('https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js');
-    app = appMod.getApps().length ? appMod.getApp() : appMod.initializeApp(firebaseConfig);
-    auth = authMod.getAuth(app);
-    db = fs.getFirestore(app);
-    firebaseReady = true;
-    authMod.onAuthStateChanged(auth, async user => {
-      if(!user) return;
-      const snap = await fs.getDoc(fs.doc(db,...root(),'users',user.uid));
-      currentProfile = snap.exists() ? snap.data() : { role:'resident', status:'active' };
+    const appMod=await import('https://www.gstatic.com/firebasejs/12.1.0/firebase-app.js');
+    const authMod=await import('https://www.gstatic.com/firebasejs/12.1.0/firebase-auth.js');
+    const fs=await import('https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js');
+    const app=appMod.getApps().length?appMod.getApp():appMod.initializeApp(firebaseConfig);
+    auth=authMod.getAuth(app); db=fs.getFirestore(app); ready=true;
+    authMod.onAuthStateChanged(auth,async user=>{
+      if(!user)return;
+      const snap=await fs.getDoc(fs.doc(db,...root(),'users',user.uid));
+      profile=snap.exists()?snap.data():profile;
+      modules.forEach(m=>syncModule(m,fs));
     });
-  }catch(error){ console.warn('Módulos comunitarios en modo local.', error); }
+  }catch(e){console.warn('Módulos comunitarios en modo local.',e);}
 }
 
-document.addEventListener('click', async (event) => {
-  const button = event.target.closest('button');
-  if(!button) return;
-  const text = button.textContent.toLowerCase();
-  let module = null;
-  if(text.includes('paquetes') || text.includes('registrar paquete')) module = 'packages';
-  else if(text.includes('incidencia') || text.includes('casos')) module = 'incidents';
-  else if(text.includes('reservar gazebo') || text.includes('reservaciones')) module = 'reservations';
-  else if(text.includes('avisos') || text.includes('comunicados')) module = 'announcements';
-  if(!module) return;
-  event.preventDefault();
-  event.stopImmediatePropagation();
-  await openModule(module);
-}, true);
-
-const labels = { packages:'Paquetes', incidents:'Incidencias', reservations:'Reservaciones', announcements:'Comunicados' };
-const icons = { packages:'📦', incidents:'🛠️', reservations:'📅', announcements:'📢' };
-const isAdmin = () => currentProfile?.role === 'admin';
-const isGuard = () => currentProfile?.role === 'guard';
-
-async function openModule(module){
-  eyebrow.textContent = isAdmin() ? 'Neighbor Admin' : isGuard() ? 'Neighbor Seguridad' : 'Neighbor Residente';
-  title.textContent = labels[module];
-  body.innerHTML = '<div class="empty-state">Cargando…</div>';
-  form.onsubmit = null;
-  dialog.showModal();
-  const items = await list(module);
-  renderList(module, items);
+function isAdmin(){return profile.role==='admin';}
+function isGuard(){return profile.role==='guard';}
+function readCache(m){try{const x=JSON.parse(localStorage.getItem(cacheKey(m)));return Array.isArray(x)?x:[];}catch{return[];}}
+function writeCache(m,x){try{localStorage.setItem(cacheKey(m),JSON.stringify(x));}catch{}}
+function visible(m,items){
+  if(isAdmin())return items;
+  if(m==='announcements'){
+    const allowed=isGuard()?['Todos','Seguridad']:profile.role==='board'?['Todos','Junta']:['Todos','Residentes'];
+    return items.filter(x=>allowed.includes(x.audience||'Todos'));
+  }
+  return items.filter(x=>x.createdBy===auth?.currentUser?.uid||!ready);
 }
 
-function renderList(module, items){
-  title.textContent = labels[module];
-  const canCreate = module !== 'announcements' || isAdmin();
-  const helper = module === 'announcements'
-    ? (isAdmin() ? 'Los avisos se distribuyen automáticamente según la audiencia.' : 'Aquí recibes los avisos publicados por Administración.')
-    : (isAdmin() ? 'Bandeja central: incluye solicitudes de residentes y seguridad.' : 'Tu solicitud se envía directamente a Administración.');
-  body.innerHTML = `
-    <p class="form-message">${helper}</p>
-    <div class="homes-toolbar">
-      <input id="communitySearch" type="search" placeholder="Buscar">
-      ${canCreate ? '<button id="communityNew" type="button" class="primary-button compact-button">+ Nuevo</button>' : ''}
-    </div>
-    <div class="module-list" id="communityList">${items.length ? items.map(item => row(module,item)).join('') : '<div class="empty-state">No hay registros todavía.</div>'}</div>`;
-  if(canCreate) document.querySelector('#communityNew').onclick = () => showForm(module);
-  document.querySelector('#communitySearch').oninput = e => {
-    const q = e.target.value.toLowerCase();
-    const filtered = items.filter(i => JSON.stringify(i).toLowerCase().includes(q));
-    document.querySelector('#communityList').innerHTML = filtered.length ? filtered.map(i=>row(module,i)).join('') : '<div class="empty-state">Sin resultados.</div>';
-    bindRows(module, items);
-  };
-  bindRows(module, items);
-}
-
-function bindRows(module, items){
-  document.querySelectorAll('[data-community-edit]').forEach(b=>b.onclick=()=>showForm(module,items.find(i=>i.id===b.dataset.communityEdit)));
-  document.querySelectorAll('[data-community-status]').forEach(b=>b.onclick=()=>changeStatus(module,b.dataset.communityStatus,b.dataset.nextStatus));
-  document.querySelectorAll('[data-community-delete]').forEach(b=>b.onclick=()=>removeItem(module,b.dataset.communityDelete));
-}
-
-function row(module,item){
-  const source = item.createdRole ? ` · Enviado por ${roleLabel(item.createdRole)}` : '';
-  const config = {
-    packages:[item.homeId || 'Sin unidad', `${item.carrier || 'Paquete'} · ${statusLabel(item.status)}${source}`],
-    incidents:[item.category || 'Incidencia', `${item.location || 'Sin ubicación'} · ${statusLabel(item.status)}${source}`],
-    reservations:[item.area || 'Área común', `${item.date || ''} ${item.time || ''} · ${statusLabel(item.status)}${source}`],
-    announcements:[item.title || 'Comunicado', `${item.audience || 'Todos'} · ${item.date || ''}`]
-  }[module];
-  const next = isAdmin() ? nextStatus(module,item.status) : null;
-  const canManage = isAdmin() || (module !== 'announcements' && item.createdBy === auth?.currentUser?.uid && item.status === 'pending');
-  return `<article class="home-row"><div><strong>${icons[module]} ${esc(config[0])}</strong><p>${esc(config[1])}</p></div><div class="row-actions">
-    ${next ? `<button type="button" data-community-status="${esc(item.id)}" data-next-status="${next}">${statusAction(next)}</button>`:''}
-    ${canManage ? `<button type="button" data-community-edit="${esc(item.id)}">Editar</button>`:''}
-    ${isAdmin() ? `<button type="button" data-community-delete="${esc(item.id)}">Eliminar</button>`:''}
-  </div></article>`;
-}
-
-function showForm(module,item={}){
-  if(module === 'announcements' && !isAdmin()) return;
-  title.textContent = item.id ? `Editar ${labels[module].toLowerCase()}` : `Nuevo ${labels[module].toLowerCase()}`;
-  body.innerHTML = fields(module,item) + `<div class="form-actions"><button id="communityCancel" type="button" class="secondary-button">Cancelar</button><button type="submit" class="primary-button">Guardar</button></div><p id="communityMessage" class="form-message"></p>`;
-  document.querySelector('#communityCancel').onclick = () => openModule(module);
-  form.onsubmit = e => saveForm(e,module,item.id);
-}
-
-function fields(module,i){
-  if(module==='packages') return `
-    <label>Unidad<input name="homeId" required value="${esc(i.homeId||currentProfile.homeId||'')}" placeholder="Ej. A-12"></label>
-    <label>Transportista<select name="carrier">${opts(['Amazon','USPS','UPS','FedEx','DHL','Otro'],i.carrier)}</select></label>
-    <label>Descripción<input name="description" value="${esc(i.description||'')}" placeholder="Caja, sobre, tamaño"></label>
-    ${isAdmin()?`<label>Estado<select name="status">${opts(['pending','delivered','returned'],i.status||'pending',statusLabel)}</select></label>`:'<input type="hidden" name="status" value="pending">'}`;
-  if(module==='incidents') return `
-    <label>Categoría<select name="category">${opts(['Alumbrado','Seguridad','Agua','Áreas comunes','Basura','Otra'],i.category)}</select></label>
-    <label>Ubicación<input name="location" required value="${esc(i.location||'')}"></label>
-    <label>Descripción<textarea name="description" required>${esc(i.description||'')}</textarea></label>
-    <label>Prioridad<select name="priority">${opts(['Baja','Media','Alta','Urgente'],i.priority||'Media')}</select></label>
-    ${isAdmin()?`<label>Estado<select name="status">${opts(['open','in-progress','resolved','closed'],i.status||'open',statusLabel)}</select></label>`:'<input type="hidden" name="status" value="open">'}`;
-  if(module==='reservations') return `
-    <label>Área<select name="area">${opts(['Gazebo','Cancha','Área recreativa','Salón'],i.area)}</select></label>
-    <label>Fecha<input name="date" type="date" required value="${esc(i.date||'')}"></label>
-    <label>Horario<select name="time">${opts(['9:00 AM – 1:00 PM','2:00 PM – 6:00 PM','6:00 PM – 10:00 PM'],i.time)}</select></label>
-    <label>Unidad<input name="homeId" required value="${esc(i.homeId||currentProfile.homeId||'')}"></label>
-    ${isAdmin()?`<label>Estado<select name="status">${opts(['pending','approved','rejected','cancelled'],i.status||'pending',statusLabel)}</select></label>`:'<input type="hidden" name="status" value="pending">'}`;
-  return `
-    <label>Título<input name="title" required value="${esc(i.title||'')}"></label>
-    <label>Mensaje<textarea name="message" required>${esc(i.message||'')}</textarea></label>
-    <label>Audiencia<select name="audience">${opts(['Todos','Residentes','Seguridad','Junta'],i.audience||'Todos')}</select></label>
-    <label>Fecha<input name="date" type="date" value="${esc(i.date||new Date().toISOString().slice(0,10))}"></label>`;
-}
-
-async function saveForm(event,module,id){
-  event.preventDefault();
-  const message = document.querySelector('#communityMessage');
-  message.textContent = 'Guardando…';
-  const data = Object.fromEntries(new FormData(form).entries());
+async function syncModule(m,fsModule=null){
+  if(!ready||!auth?.currentUser)return readCache(m);
+  const fs=fsModule||await import('https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js');
   try{
-    await save(module,id,data);
-    const route = module === 'announcements' ? `Publicado para ${data.audience}` : 'Enviado a Administración';
-    await audit(`${labels[module]} actualizado`, `${icons[module]} ${data.homeId||data.title||data.category||data.area||''} · ${route}`);
-    await openModule(module);
-  }catch(error){ message.textContent = error.message || 'No se pudo guardar.'; }
+    const q=fs.query(fs.collection(db,...root(),m),fs.orderBy('createdAt','desc'),fs.limit(100));
+    const snap=await fs.getDocs(q); const items=snap.docs.map(d=>({id:d.id,...d.data()})); writeCache(m,items);
+    if(activeModule===m&&dialog.open)renderList(m,visible(m,items),false);
+    return items;
+  }catch(e){console.warn(`Sync ${m}:`,e);return readCache(m);}
 }
 
-async function changeStatus(module,id,status){
-  if(!isAdmin()) return;
-  const item = (await listRaw(module)).find(x=>x.id===id); if(!item) return;
-  await save(module,id,{...item,status});
-  await openModule(module);
+document.addEventListener('click',e=>{
+  const b=e.target.closest('button'); if(!b)return;
+  const t=b.textContent.toLowerCase(); let m=null;
+  if(t.includes('paquetes')||t.includes('registrar paquete'))m='packages';
+  else if(t.includes('incidencia')||t.includes('casos'))m='incidents';
+  else if(t.includes('reservar gazebo')||t.includes('reservaciones'))m='reservations';
+  else if(t.includes('avisos')||t.includes('comunicados'))m='announcements';
+  if(!m)return; e.preventDefault(); e.stopImmediatePropagation(); openModule(m);
+},true);
+
+function openModule(m){
+  activeModule=m; eyebrow.textContent=isAdmin()?'Neighbor Admin':isGuard()?'Neighbor Seguridad':'Neighbor Residente'; title.textContent=labels[m]; form.onsubmit=null; dialog.showModal();
+  renderList(m,visible(m,readCache(m)),true);
+  syncModule(m);
 }
 
-async function removeItem(module,id){
-  if(!isAdmin() || !confirm('¿Eliminar este registro?')) return;
-  if(firebaseReady && auth?.currentUser){
-    const {deleteDoc,doc}=await import('https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js');
-    await deleteDoc(doc(db,...root(),module,id));
-  }else localStorage.setItem(localKey(module),JSON.stringify((await listRaw(module)).filter(x=>x.id!==id)));
-  await openModule(module);
+function renderList(m,items,syncing=false){
+  if(activeModule!==m)return;
+  const canCreate=m!=='announcements'||isAdmin();
+  const helper=m==='announcements'?(isAdmin()?'Los avisos se distribuyen automáticamente.':'Avisos publicados por Administración.'):(isAdmin()?'Bandeja central de solicitudes.':'Tu solicitud se envía a Administración.');
+  body.innerHTML=`<p class="form-message">${helper}${syncing?' · Sincronizando…':''}</p><div class="homes-toolbar"><input id="communitySearch" type="search" placeholder="Buscar">${canCreate?'<button id="communityNew" type="button" class="primary-button compact-button">+ Nuevo</button>':''}</div><div class="module-list" id="communityList">${items.length?items.map(x=>row(m,x)).join(''):'<div class="empty-state">No hay registros todavía.</div>'}</div>`;
+  document.querySelector('#communityNew')?.addEventListener('click',()=>showForm(m));
+  document.querySelector('#communitySearch').oninput=e=>{const q=e.target.value.toLowerCase(),f=items.filter(x=>JSON.stringify(x).toLowerCase().includes(q));document.querySelector('#communityList').innerHTML=f.length?f.map(x=>row(m,x)).join(''):'<div class="empty-state">Sin resultados.</div>';bind(m,items);};
+  bind(m,items);
 }
-
-async function list(module){
-  const all = await listRaw(module);
-  if(isAdmin()) return all;
-  if(module === 'announcements'){
-    const audience = isGuard() ? ['Todos','Seguridad'] : currentProfile.role === 'board' ? ['Todos','Junta'] : ['Todos','Residentes'];
-    return all.filter(item => audience.includes(item.audience || 'Todos'));
-  }
-  return all.filter(item => item.createdBy === auth?.currentUser?.uid || !firebaseReady);
+function bind(m,items){
+  document.querySelectorAll('[data-community-edit]').forEach(b=>b.onclick=()=>showForm(m,items.find(x=>x.id===b.dataset.communityEdit)));
+  document.querySelectorAll('[data-community-status]').forEach(b=>b.onclick=()=>changeStatus(m,b.dataset.communityStatus,b.dataset.nextStatus));
+  document.querySelectorAll('[data-community-delete]').forEach(b=>b.onclick=()=>removeItem(m,b.dataset.communityDelete));
 }
-
-async function listRaw(module){
-  if(firebaseReady && auth?.currentUser){
-    try{
-      const {collection,getDocs,query,orderBy}=await import('https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js');
-      const snap=await getDocs(query(collection(db,...root(),module),orderBy('createdAt','desc')));
-      return snap.docs.map(d=>({id:d.id,...d.data()}));
-    }catch{
-      const {collection,getDocs}=await import('https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js');
-      const snap=await getDocs(collection(db,...root(),module));
-      return snap.docs.map(d=>({id:d.id,...d.data()}));
-    }
-  }
-  try{return JSON.parse(localStorage.getItem(localKey(module)))||[];}catch{return[];}
+function row(m,x){
+  const cfg={packages:[x.homeId||'Sin unidad',`${x.carrier||'Paquete'} · ${statusLabel(x.status)}`],incidents:[x.category||'Incidencia',`${x.location||'Sin ubicación'} · ${statusLabel(x.status)}`],reservations:[x.area||'Área común',`${x.date||''} ${x.time||''} · ${statusLabel(x.status)}`],announcements:[x.title||'Comunicado',`${x.audience||'Todos'} · ${x.date||''}`]}[m];
+  const next=isAdmin()?nextStatus(m,x.status):null,manage=isAdmin()||(m!=='announcements'&&x.createdBy===auth?.currentUser?.uid&&['pending','open'].includes(x.status));
+  return `<article class="home-row"><div><strong>${icons[m]} ${esc(cfg[0])}</strong><p>${esc(cfg[1])}</p></div><div class="row-actions">${next?`<button type="button" data-community-status="${esc(x.id)}" data-next-status="${next}">${statusAction(next)}</button>`:''}${manage?`<button type="button" data-community-edit="${esc(x.id)}">Editar</button>`:''}${isAdmin()?`<button type="button" data-community-delete="${esc(x.id)}">Eliminar</button>`:''}</div></article>`;
 }
-
-async function save(module,id,data){
-  const normalized={...data,homeId:String(data.homeId||'').toUpperCase(),destination:module==='announcements'?data.audience:'Administración',createdRole:currentProfile.role||'resident',updatedAt:new Date().toISOString()};
-  if(firebaseReady && auth?.currentUser){
-    const {addDoc,collection,doc,setDoc,serverTimestamp}=await import('https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js');
-    const payload={...normalized,updatedAt:serverTimestamp(),updatedBy:auth.currentUser.uid};
-    if(id) await setDoc(doc(db,...root(),module,id),payload,{merge:true});
-    else await addDoc(collection(db,...root(),module),{...payload,createdAt:serverTimestamp(),createdBy:auth.currentUser.uid,createdByName:currentProfile.name||auth.currentUser.email||''});
-  }else{
-    const items=await listRaw(module); const record={...normalized,id:id||crypto.randomUUID(),createdBy:'local-user',createdAt:new Date().toISOString()};
-    const next=id?items.map(x=>x.id===id?{...x,...record}:x):[record,...items];
-    localStorage.setItem(localKey(module),JSON.stringify(next));
-  }
+function showForm(m,x={}){
+  if(m==='announcements'&&!isAdmin())return;
+  title.textContent=x.id?`Editar ${labels[m].toLowerCase()}`:`Nuevo ${labels[m].toLowerCase()}`;
+  body.innerHTML=fields(m,x)+`<div class="form-actions"><button id="communityCancel" type="button" class="secondary-button">Cancelar</button><button type="submit" class="primary-button">Guardar</button></div><p id="communityMessage" class="form-message"></p>`;
+  document.querySelector('#communityCancel').onclick=()=>openModule(m); form.onsubmit=e=>saveForm(e,m,x.id);
 }
-
-async function audit(titleText,detail){
-  if(!firebaseReady||!auth?.currentUser) return;
-  const {addDoc,collection,serverTimestamp}=await import('https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js');
-  await addDoc(collection(db,...root(),'activity'),{title:titleText,detail,icon:'✅',type:'module-update',userId:auth.currentUser.uid,communityId:COMMUNITY_ID,createdAt:serverTimestamp()});
+function fields(m,x){
+  if(m==='packages')return `<label>Unidad<input name="homeId" required value="${esc(x.homeId||profile.homeId||'')}"></label><label>Transportista<select name="carrier">${opts(['Amazon','USPS','UPS','FedEx','DHL','Otro'],x.carrier)}</select></label><label>Descripción<input name="description" value="${esc(x.description||'')}"></label><input type="hidden" name="status" value="${esc(x.status||'pending')}">`;
+  if(m==='incidents')return `<label>Categoría<select name="category">${opts(['Alumbrado','Seguridad','Agua','Áreas comunes','Basura','Otra'],x.category)}</select></label><label>Ubicación<input name="location" required value="${esc(x.location||'')}"></label><label>Descripción<textarea name="description" required>${esc(x.description||'')}</textarea></label><label>Prioridad<select name="priority">${opts(['Baja','Media','Alta','Urgente'],x.priority||'Media')}</select></label><input type="hidden" name="status" value="${esc(x.status||'open')}">`;
+  if(m==='reservations')return `<label>Área<select name="area">${opts(['Gazebo','Cancha','Área recreativa','Salón'],x.area)}</select></label><label>Fecha<input name="date" type="date" required value="${esc(x.date||'')}"></label><label>Horario<select name="time">${opts(['9:00 AM – 1:00 PM','2:00 PM – 6:00 PM','6:00 PM – 10:00 PM'],x.time)}</select></label><label>Unidad<input name="homeId" required value="${esc(x.homeId||profile.homeId||'')}"></label><input type="hidden" name="status" value="${esc(x.status||'pending')}">`;
+  return `<label>Título<input name="title" required value="${esc(x.title||'')}"></label><label>Mensaje<textarea name="message" required>${esc(x.message||'')}</textarea></label><label>Audiencia<select name="audience">${opts(['Todos','Residentes','Seguridad','Junta'],x.audience||'Todos')}</select></label><label>Fecha<input name="date" type="date" value="${esc(x.date||new Date().toISOString().slice(0,10))}"></label>`;
 }
-
-function localKey(m){return `neighbor-${COMMUNITY_ID}-${m}`;}
-function opts(values,current,map=x=>x){return values.map(v=>`<option value="${esc(v)}" ${v===current?'selected':''}>${esc(map(v))}</option>`).join('');}
-function roleLabel(role){return ({admin:'Administración',guard:'Seguridad',resident:'Residente',board:'Junta',maintenance:'Mantenimiento'})[role]||role;}
+async function saveForm(e,m,id){e.preventDefault();const msg=document.querySelector('#communityMessage'),data=Object.fromEntries(new FormData(form).entries());msg.textContent='Guardando…';try{await save(m,id,data);openModule(m);}catch(err){msg.textContent=err.message||'No se pudo guardar.';}}
+async function save(m,id,data){
+  const normalized={...data,homeId:String(data.homeId||'').toUpperCase(),destination:m==='announcements'?data.audience:'Administración',createdRole:profile.role||'resident'};
+  if(ready&&auth?.currentUser){const fs=await import('https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js');const payload={...normalized,updatedAt:fs.serverTimestamp(),updatedBy:auth.currentUser.uid};if(id)await fs.setDoc(fs.doc(db,...root(),m,id),payload,{merge:true});else await fs.addDoc(fs.collection(db,...root(),m),{...payload,createdAt:fs.serverTimestamp(),createdBy:auth.currentUser.uid,createdByName:profile.name||auth.currentUser.email||''});}
+  else{const a=readCache(m),r={...normalized,id:id||crypto.randomUUID(),createdBy:'local-user',createdAt:new Date().toISOString()},n=id?a.map(x=>x.id===id?{...x,...r}:x):[r,...a];writeCache(m,n);} await syncModule(m);
+}
+async function changeStatus(m,id,status){if(!isAdmin())return;const x=readCache(m).find(x=>x.id===id);if(x)await save(m,id,{...x,status});}
+async function removeItem(m,id){if(!isAdmin()||!confirm('¿Eliminar este registro?'))return;if(ready&&auth?.currentUser){const fs=await import('https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js');await fs.deleteDoc(fs.doc(db,...root(),m,id));}else writeCache(m,readCache(m).filter(x=>x.id!==id));await syncModule(m);openModule(m);}
+function opts(a,c){return a.map(v=>`<option value="${esc(v)}" ${v===c?'selected':''}>${esc(v)}</option>`).join('');}
 function statusLabel(s){return ({pending:'Pendiente',delivered:'Entregado',returned:'Devuelto',open:'Abierta','in-progress':'En progreso',resolved:'Resuelta',closed:'Cerrada',approved:'Aprobada',rejected:'Rechazada',cancelled:'Cancelada'})[s]||s||'Pendiente';}
-function nextStatus(module,s){if(module==='packages')return s==='pending'?'delivered':null;if(module==='incidents')return s==='open'?'in-progress':s==='in-progress'?'resolved':null;if(module==='reservations')return s==='pending'?'approved':null;return null;}
+function nextStatus(m,s){if(m==='packages')return s==='pending'?'delivered':null;if(m==='incidents')return s==='open'?'in-progress':s==='in-progress'?'resolved':null;if(m==='reservations')return s==='pending'?'approved':null;return null;}
 function statusAction(s){return ({delivered:'Entregar','in-progress':'Atender',resolved:'Resolver',approved:'Aprobar'})[s]||'Actualizar';}
 function esc(v){return String(v??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));}
