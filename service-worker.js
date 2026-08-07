@@ -1,6 +1,6 @@
-const CACHE_NAME = 'neighbor-terra-lugo-v1.4.5';
+const CACHE_NAME = 'neighbor-terra-lugo-v1.4.6';
 const APP_SHELL = [
-  './', './index.html', './styles.css', './hero.css', './homes.css', './desktop.css', './contrast.css',
+  './', './index.html', './styles.css', './hero.css', './homes.css', './desktop.css', './contrast.css', './login-v2.css',
   './camera-compat.js', './ui-polish.js', './app.js', './production-mode.js', './auth-actions.js', './admin-actions.js', './desktop-modules.js', './users-module.js',
   './residents-module.js', './homes-module.js', './vehicles-module.js', './guard-module.js', './visits-module.js',
   './community-modules.js', './calendar-module.js', './realtime-notifications.js', './notification-badges.js',
@@ -23,7 +23,7 @@ self.addEventListener('fetch', event => {
   const url = new URL(event.request.url);
   if (url.origin !== self.location.origin) return;
 
-  const isCode = event.request.mode === 'navigate' || /\.(?:js|html)$/.test(url.pathname) || url.pathname.endsWith('/');
+  const isCode = event.request.mode === 'navigate' || /\.(?:js|html|css)$/.test(url.pathname) || url.pathname.endsWith('/');
   if (isCode) {
     event.respondWith(
       fetch(event.request, { cache: 'no-store' })
