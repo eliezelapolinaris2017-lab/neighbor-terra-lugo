@@ -105,8 +105,13 @@ function bind(m,items){
   document.querySelectorAll('[data-community-delete]').forEach(b=>b.onclick=()=>removeItem(m,b.dataset.communityDelete));
 }
 function row(m,x){
-  const cfg={packages:[x.homeId||'Sin unidad',`${x.carrier||'Paquete'} · ${statusLabel(x.status)}`],incidents:[x.category||'Incidencia',`${x.location||'Sin ubicación'} · ${statusLabel(x.status)}`],reservations:[x.area||'Área común',`${x.date||''} ${x.time||''} · ${statusLabel(x.status)}`],announcements:[x.title||'Comunicado',`${x.audience||'Todos'} · ${x.date||''}`]}[m];
-  const next=isAdmin()?nextStatus(m,x.status):null,manage=isAdmin()||(m!=='announcements'&&x.createdBy===auth?.currentUser?.uid&&['pending','open'].includes(x.status));
+  if(m==='announcements'){
+    const meta=[x.audience||'Todos',x.date||''].filter(Boolean).join(' · ');
+    const manage=isAdmin();
+    return `<article class="home-row"><div><strong>${icons[m]} ${esc(x.title||'Comunicado')}</strong><p style="white-space:pre-wrap;margin:.45rem 0 .3rem">${esc(x.message||'Sin mensaje')}</p><small>${esc(meta)}</small></div><div class="row-actions">${manage?`<button type="button" data-community-edit="${esc(x.id)}">Editar</button><button type="button" data-community-delete="${esc(x.id)}">Eliminar</button>`:''}</div></article>`;
+  }
+  const cfg={packages:[x.homeId||'Sin unidad',`${x.carrier||'Paquete'} · ${statusLabel(x.status)}`],incidents:[x.category||'Incidencia',`${x.location||'Sin ubicación'} · ${statusLabel(x.status)}`],reservations:[x.area||'Área común',`${x.date||''} ${x.time||''} · ${statusLabel(x.status)}`]}[m];
+  const next=isAdmin()?nextStatus(m,x.status):null,manage=isAdmin()||(x.createdBy===auth?.currentUser?.uid&&['pending','open'].includes(x.status));
   return `<article class="home-row"><div><strong>${icons[m]} ${esc(cfg[0])}</strong><p>${esc(cfg[1])}</p></div><div class="row-actions">${next?`<button type="button" data-community-status="${esc(x.id)}" data-next-status="${next}">${statusAction(next)}</button>`:''}${manage?`<button type="button" data-community-edit="${esc(x.id)}">Editar</button>`:''}${isAdmin()?`<button type="button" data-community-delete="${esc(x.id)}">Eliminar</button>`:''}</div></article>`;
 }
 function showForm(m,x={}){
