@@ -8,16 +8,19 @@ const MODULE_ALIASES = {
 
 const moduleCounts = new Map();
 let lastAppBadge = -1;
+let renderQueued = false;
 
 installStyles();
 watchNotificationBadge();
 watchDynamicNavigation();
 
 window.addEventListener('neighbor:realtime-update', (event) => {
-  const { module, items = [] } = event.detail || {};
+  const detail = event.detail || {};
+  const module = detail.module || detail.collection;
+  const items = Array.isArray(detail.items) ? detail.items : [];
   if (!module) return;
-  moduleCounts.set(module, countRelevant(module, items));
-  renderModuleBadges();
+  if (items.length) moduleCounts.set(module, countRelevant(module, items));
+  queueRenderModuleBadges();
 });
 
 function countRelevant(module, items) {
@@ -32,7 +35,7 @@ function installStyles() {
   style.id = 'neighborModuleBadgeStyles';
   style.textContent = `
     .action-card,.nav-item{position:relative}
-    .module-count-badge{position:absolute;top:8px;right:8px;z-index:4;min-width:21px;height:21px;padding:0 6px;border-radius:999px;background:#dc2626;color:#fff;font:700 12px/21px Inter,sans-serif;text-align:center;box-shadow:0 2px 8px rgba(220,38,38,.35)}
+    .module-count-badge{position:absolute;top:8px;right:8px;z-index:4;min-width:21px;height:21px;padding:0 6px;border-radius:999px;background:#dc2626;color:#fff;font:700 12px/21px Inter,sans-serif;text-align:center;box-shadow:0 2px 8px rgba(220,38,38,.35);pointer-events:none}
     .nav-item .module-count-badge{top:3px;right:calc(50% - 24px);min-width:18px;height:18px;padding:0 5px;font-size:10px;line-height:18px}
   `;
   document.head.appendChild(style);
@@ -41,10 +44,11 @@ function installStyles() {
 function watchNotificationBadge() {
   const connect = () => {
     const badge = document.querySelector('#neighborBadge');
-    if (!badge) return false;
+    if (!badge || badge.dataset.badgeObserver === 'true') return Boolean(badge);
+    badge.dataset.badgeObserver = 'true';
     const sync = () => syncAppBadge(parseBadgeValue(badge.textContent));
     sync();
-    new MutationObserver(sync).observe(badge, { childList: true, characterData: true, subtree: true, attributes: true });
+    new MutationObserver(sync).observe(badge, { childList: true, characterData: true, subtree: true });
     return true;
   };
 
@@ -76,9 +80,19 @@ async function syncAppBadge(count) {
 
 function watchDynamicNavigation() {
   const targets = [document.querySelector('#actionGrid'), document.querySelector('#bottomNav')].filter(Boolean);
-  const observer = new MutationObserver(renderModuleBadges);
-  targets.forEach((target) => observer.observe(target, { childList: true, subtree: true }));
-  renderModuleBadges();
+  const observer = new MutationObserver(queueRenderModuleBadges);
+  // Solo observar hijos directos. Observar subtree provocaba un ciclo al insertar/actualizar badges.
+  targets.forEach((target) => observer.observe(target, { childList: true }));
+  queueRenderModuleBadges();
+}
+
+function queueRenderModuleBadges() {
+  if (renderQueued) return;
+  renderQueued = true;
+  requestAnimationFrame(() => {
+    renderQueued = false;
+    renderModuleBadges();
+  });
 }
 
 function renderModuleBadges() {
@@ -86,20 +100,22 @@ function renderModuleBadges() {
     const module = identifyModule(element.textContent);
     const oldBadge = element.querySelector(':scope > .module-count-badge');
     if (!module) {
-      oldBadge?.remove();
+      if (oldBadge) oldBadge.remove();
       return;
     }
 
     const count = moduleCounts.get(module) || 0;
     if (!count) {
-      oldBadge?.remove();
+      if (oldBadge) oldBadge.remove();
       return;
     }
 
+    const nextText = count > 99 ? '99+' : String(count);
     const badge = oldBadge || document.createElement('span');
     badge.className = 'module-count-badge';
-    badge.textContent = count > 99 ? '99+' : String(count);
-    badge.setAttribute('aria-label', `${count} notificaciones pendientes`);
+    if (badge.textContent !== nextText) badge.textContent = nextText;
+    const aria = `${count} notificaciones pendientes`;
+    if (badge.getAttribute('aria-label') !== aria) badge.setAttribute('aria-label', aria);
     if (!oldBadge) element.appendChild(badge);
   });
 }
