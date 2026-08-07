@@ -15,17 +15,17 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css" />
-  <link rel="stylesheet" href="hero.css" />
-  <link rel="stylesheet" href="homes.css" />
-  <link rel="stylesheet" href="desktop.css?v=1.4.4" />
-  <link rel="stylesheet" href="contrast.css?v=1.4.4" />
+  <link rel="stylesheet" href="styles.css?v=1.4.5" />
+  <link rel="stylesheet" href="hero.css?v=1.4.5" />
+  <link rel="stylesheet" href="homes.css?v=1.4.5" />
+  <link rel="stylesheet" href="desktop.css?v=1.4.5" />
+  <link rel="stylesheet" href="contrast.css?v=1.4.5" />
 </head>
 <body>
   <section class="login-screen" id="loginScreen">
     <div class="login-card">
       <div class="brand-lockup"><span class="brand-mark">N</span><div><strong>Neighbor</strong><small>Terra Lugo · Cupey Bajo</small></div></div>
-      <p class="eyebrow">Neighbor Beta 1.4.4</p>
+      <p class="eyebrow">Neighbor Beta 1.4.5</p>
       <h1>Bienvenido</h1>
       <p class="login-copy">Accede con tu cuenta autorizada de Neighbor.</p>
       <form class="auth-form" id="loginForm">
@@ -88,24 +88,24 @@
       localStorage.removeItem('neighbor-terra-lugo-current-user');
     }
   </script>
-  <script src="camera-compat.js?v=1.4.4"></script>
-  <script type="module" src="app.js?v=1.4.4"></script>
-  <script type="module" src="production-mode.js?v=1.4.4"></script>
-  <script type="module" src="auth-actions.js?v=1.4.4"></script>
-  <script type="module" src="admin-actions.js?v=1.4.4"></script>
-  <script type="module" src="desktop-modules.js?v=1.4.4"></script>
-  <script type="module" src="users-module.js?v=1.4.4"></script>
-  <script type="module" src="residents-module.js?v=1.4.4"></script>
-  <script type="module" src="homes-module.js?v=1.4.4"></script>
-  <script type="module" src="vehicles-module.js?v=1.4.4"></script>
-  <script type="module" src="guard-module.js?v=1.4.4"></script>
-  <script type="module" src="visits-module.js?v=1.4.4"></script>
-  <script type="module" src="community-modules.js?v=1.4.4"></script>
-  <script type="module" src="calendar-module.js?v=1.4.4"></script>
-  <script type="module" src="realtime-notifications.js?v=1.4.4"></script>
-  <script type="module" src="notification-badges.js?v=1.4.4"></script>
-  <script type="module" src="finance-module.js?v=1.4.4"></script>
-  <script src="ui-polish.js?v=1.4.4"></script>
+  <script src="camera-compat.js?v=1.4.5"></script>
+  <script type="module" src="app.js?v=1.4.5"></script>
+  <script type="module" src="production-mode.js?v=1.4.5"></script>
+  <script type="module" src="auth-actions.js?v=1.4.5"></script>
+  <script type="module" src="admin-actions.js?v=1.4.5"></script>
+  <script type="module" src="desktop-modules.js?v=1.4.5"></script>
+  <script type="module" src="users-module.js?v=1.4.5"></script>
+  <script type="module" src="residents-module.js?v=1.4.5"></script>
+  <script type="module" src="homes-module.js?v=1.4.5"></script>
+  <script type="module" src="vehicles-module.js?v=1.4.5"></script>
+  <script type="module" src="guard-module.js?v=1.4.5"></script>
+  <script type="module" src="visits-module.js?v=1.4.5"></script>
+  <script type="module" src="community-modules.js?v=1.4.5"></script>
+  <script type="module" src="calendar-module.js?v=1.4.5"></script>
+  <script type="module" src="realtime-notifications.js?v=1.4.5"></script>
+  <script type="module" src="notification-badges.js?v=1.4.5"></script>
+  <script type="module" src="finance-module.js?v=1.4.5"></script>
+  <script src="ui-polish.js?v=1.4.5"></script>
   <script>
     const featureDialog = document.querySelector('#featureDialog');
     document.querySelector('#dialogClose').addEventListener('click', () => featureDialog.close());
@@ -117,7 +117,7 @@
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', async () => {
         try {
-          const registration = await navigator.serviceWorker.register('./service-worker.js?v=1.4.4', { updateViaCache: 'none' });
+          const registration = await navigator.serviceWorker.register('./service-worker.js?v=1.4.5', { updateViaCache: 'none' });
           registration.update().catch(() => {});
         } catch (error) { console.warn('Service Worker:', error); }
       });
