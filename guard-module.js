@@ -141,4 +141,4 @@ function toDate(value){if(!value)return null;if(typeof value.toDate==='function'
 function dateMs(value){return toDate(value)?.getTime()||0;}
 function formatDate(value){const d=toDate(value);return d?new Intl.DateTimeFormat('es-PR',{dateStyle:'short',timeStyle:'short'}).format(d):'Sin fecha';}
 function cleanError(error){const code=String(error?.code||'');if(code.includes('permission-denied'))return'No tienes permiso para esta operación.';if(code.includes('unavailable'))return'Firebase no está disponible ahora.';return String(error?.message||'No se pudo completar la operación.').replace(/^FirebaseError:\s*/i,'');}
-function esc(v){return String(v??'').replace(/[&<>'\"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','\"':'&quot;'}[c]));}
+function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
