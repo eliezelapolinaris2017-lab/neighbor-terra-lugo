@@ -1,11 +1,7 @@
 @media (min-width: 980px){
   body{background:#eef3f8}
   .login-screen{padding:48px}
-  .login-card{width:min(100%,980px);display:grid;grid-template-columns:minmax(0,1fr) minmax(360px,430px);column-gap:56px;align-items:start;padding:44px}
-  .login-card .brand-lockup,.login-card>.eyebrow,.login-card>h1,.login-card>.login-copy{grid-column:1}
-  .login-card .auth-form{grid-column:1;grid-row:5/8}
-  .login-card .login-divider{grid-column:2;grid-row:1;margin:0 0 18px}
-  .login-card .role-grid{grid-column:2;grid-row:2/8}
+  .login-card{width:min(100%,580px);display:block;padding:44px}
 
   .app-shell{width:min(calc(100% - 260px),1320px);margin-left:240px;margin-right:auto;padding:32px 42px 60px;display:grid;grid-template-columns:minmax(0,1.35fr) minmax(330px,.65fr);column-gap:28px;align-items:start}
   .community-hero{grid-column:1/-1;min-height:300px;margin:0 0 20px;border-radius:28px;padding:34px 38px;background-position:center 44%}
@@ -25,7 +21,7 @@
   .nav-item span{display:block;margin:0;font-size:1.1rem;text-align:center}
   .nav-item.active{background:#eaf3fb}
 
-  dialog{width:min(760px,calc(100% - 80px));max-height:86vh;border-radius:28px}
+  dialog{width:min(820px,calc(100% - 80px));max-height:86vh;border-radius:28px}
   dialog form{padding:34px 38px}
   .homes-toolbar{display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center}
   .homes-toolbar .primary-button,.homes-toolbar .compact-button{width:auto;min-width:140px;margin-top:0}
@@ -33,7 +29,6 @@
   .module-list{gap:12px}
   .module-list article,.home-row{padding:18px 20px}
   .metric-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
-
   .neighbor-bell{right:26px!important;bottom:26px!important}
 }
 
