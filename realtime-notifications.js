@@ -135,8 +135,13 @@ function addNotification(module, item) {
 function describe(module, item) {
   if (module === 'packages') return `${item.carrier || 'Paquete'} · Unidad ${item.homeId || 'sin unidad'}`;
   if (module === 'incidents') return `${item.category || 'Incidencia'} · ${item.location || 'sin ubicación'}`;
-  if (module === 'reservations') return `${item.area || 'Área común'} · ${item.date || ''}`;
-  if (module === 'announcements') return item.title || 'La administración publicó un aviso.';
+  if (module === 'reservations') {
+    const requester = String(item.requesterName || item.createdByName || item.residentName || item.requestedByName || 'Residente').trim() || 'Residente';
+    const unit = item.homeId ? `Unidad ${item.homeId}` : 'Sin unidad';
+    const when = [item.date || '', item.time || ''].filter(Boolean).join(' · ');
+    return `${requester} · ${unit} · ${item.area || 'Área común'}${when ? ` · ${when}` : ''}`;
+  }
+  if (module === 'announcements') return item.message ? `${item.title || 'Comunicado'} · ${item.message}` : (item.title || 'La administración publicó un aviso.');
   if (module === 'visits') return `${item.visitor || item.visitorName || 'Visitante'} · Unidad ${item.homeId || ''}`;
   return 'Hay una actualización nueva.';
 }
@@ -196,7 +201,7 @@ function createNotificationUi() {
   const appShell = document.querySelector('#appShell');
   const syncVisibility = () => bell.classList.toggle('visible', !appShell?.classList.contains('hidden'));
   syncVisibility();
-  new MutationObserver(syncVisibility).observe(appShell, { attributes: true, attributeFilter: ['class'] });
+  if (appShell) new MutationObserver(syncVisibility).observe(appShell, { attributes: true, attributeFilter: ['class'] });
 }
 
 function updateBadge() {
@@ -234,7 +239,7 @@ async function openNotificationCenter() {
     <div class="notification-actions"><button id="markAllRead" type="button">Marcar leídas</button><button id="clearNotifications" type="button">Limpiar</button></div>
     <div class="module-list">${notifications.map(notificationRow).join('')}</div>`
     : '<div class="empty-state">No hay notificaciones.</div>';
-  dialog.showModal();
+  if (!dialog.open) dialog.showModal();
 
   document.querySelector('#markAllRead')?.addEventListener('click', () => {
     notifications = notifications.map((item) => ({ ...item, read: true }));
@@ -273,7 +278,7 @@ function storageKey() { return `${STORAGE_PREFIX}-${currentUid || 'guest'}`; }
 function loadNotifications() {
   try { const value = JSON.parse(localStorage.getItem(storageKey())); return Array.isArray(value) ? value : []; } catch { return []; }
 }
-function persistNotifications() { localStorage.setItem(storageKey(), JSON.stringify(notifications)); }
+function persistNotifications() { try { localStorage.setItem(storageKey(), JSON.stringify(notifications)); } catch {} }
 function relativeTime(timestamp) {
   const seconds = Math.max(1, Math.floor((Date.now() - Number(timestamp || Date.now())) / 1000));
   if (seconds < 60) return 'Ahora mismo';
