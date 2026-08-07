@@ -1,8 +1,8 @@
-const CACHE_NAME = 'neighbor-terra-lugo-v1.3.3';
+const CACHE_NAME = 'neighbor-terra-lugo-v1.4.0';
 const APP_SHELL = [
   './', './index.html', './styles.css', './hero.css', './homes.css', './desktop.css',
   './app.js', './production-mode.js', './auth-actions.js', './admin-actions.js', './desktop-modules.js', './users-module.js',
-  './residents-module.js', './homes-module.js', './vehicles-module.js', './visits-module.js',
+  './residents-module.js', './homes-module.js', './vehicles-module.js', './guard-module.js', './visits-module.js',
   './community-modules.js', './calendar-module.js', './realtime-notifications.js', './notification-badges.js',
   './finance-module.js', './firebase-config.js', './firebase-service.js',
   './manifest.webmanifest', './neighbor-icon.svg'
