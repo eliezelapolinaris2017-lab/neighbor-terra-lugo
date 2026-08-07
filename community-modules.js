@@ -4,6 +4,8 @@ const dialog=document.querySelector('#featureDialog'), title=document.querySelec
 const labels={packages:'Paquetes',incidents:'Incidencias',reservations:'Reservaciones',announcements:'Comunicados'};
 const icons={packages:'📦',incidents:'🛠️',reservations:'📅',announcements:'📢'};
 const modules=['packages','incidents','reservations','announcements'];
+const syncLocks=new Map();
+const lastSync=new Map();
 let auth,db,ready=false,profile={role:'resident',status:'active'},activeModule=null;
 const root=()=>['apps',APP_NAMESPACE,'communities',COMMUNITY_ID];
 const cacheKey=m=>`neighbor-${COMMUNITY_ID}-${m}`;
@@ -18,12 +20,21 @@ async function init(){
     auth=authMod.getAuth(app); db=fs.getFirestore(app); ready=true;
     authMod.onAuthStateChanged(auth,async user=>{
       if(!user)return;
-      const snap=await fs.getDoc(fs.doc(db,...root(),'users',user.uid));
-      profile=snap.exists()?snap.data():profile;
-      modules.forEach(m=>syncModule(m,fs));
+      try{
+        const snap=await fs.getDoc(fs.doc(db,...root(),'users',user.uid));
+        profile=snap.exists()?snap.data():profile;
+      }catch(e){console.warn('No se pudo cargar el perfil comunitario.',e);}
     });
   }catch(e){console.warn('Módulos comunitarios en modo local.',e);}
 }
+
+window.addEventListener('neighbor:realtime-update',event=>{
+  const {module,items}=event.detail||{};
+  if(!modules.includes(module)||!Array.isArray(items))return;
+  writeCache(module,items);
+  lastSync.set(module,Date.now());
+  if(activeModule===module&&dialog.open)renderList(module,visible(module,items),false);
+});
 
 function isAdmin(){return profile.role==='admin';}
 function isGuard(){return profile.role==='guard';}
@@ -38,15 +49,26 @@ function visible(m,items){
   return items.filter(x=>x.createdBy===auth?.currentUser?.uid||!ready);
 }
 
-async function syncModule(m,fsModule=null){
+async function syncModule(m,force=false){
   if(!ready||!auth?.currentUser)return readCache(m);
-  const fs=fsModule||await import('https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js');
-  try{
-    const q=fs.query(fs.collection(db,...root(),m),fs.orderBy('createdAt','desc'),fs.limit(100));
-    const snap=await fs.getDocs(q); const items=snap.docs.map(d=>({id:d.id,...d.data()})); writeCache(m,items);
-    if(activeModule===m&&dialog.open)renderList(m,visible(m,items),false);
-    return items;
-  }catch(e){console.warn(`Sync ${m}:`,e);return readCache(m);}
+  const cached=readCache(m);
+  const age=Date.now()-(lastSync.get(m)||0);
+  if(!force&&cached.length&&age<45000)return cached;
+  if(syncLocks.has(m))return syncLocks.get(m);
+  const task=(async()=>{
+    const fs=await import('https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js');
+    try{
+      const q=fs.query(fs.collection(db,...root(),m),fs.orderBy('createdAt','desc'),fs.limit(60));
+      const snap=await fs.getDocs(q);
+      const items=snap.docs.map(d=>({id:d.id,...d.data()}));
+      writeCache(m,items); lastSync.set(m,Date.now());
+      if(activeModule===m&&dialog.open)renderList(m,visible(m,items),false);
+      return items;
+    }catch(e){console.warn(`Sync ${m}:`,e);return readCache(m);}
+    finally{syncLocks.delete(m);}
+  })();
+  syncLocks.set(m,task);
+  return task;
 }
 
 document.addEventListener('click',e=>{
@@ -60,9 +82,11 @@ document.addEventListener('click',e=>{
 },true);
 
 function openModule(m){
-  activeModule=m; eyebrow.textContent=isAdmin()?'Neighbor Admin':isGuard()?'Neighbor Seguridad':'Neighbor Residente'; title.textContent=labels[m]; form.onsubmit=null; dialog.showModal();
-  renderList(m,visible(m,readCache(m)),true);
-  syncModule(m);
+  activeModule=m; eyebrow.textContent=isAdmin()?'Neighbor Admin':isGuard()?'Neighbor Seguridad':'Neighbor Residente'; title.textContent=labels[m]; form.onsubmit=null;
+  if(!dialog.open)dialog.showModal();
+  const cached=visible(m,readCache(m));
+  renderList(m,cached,false);
+  syncModule(m,false);
 }
 
 function renderList(m,items,syncing=false){
@@ -71,7 +95,8 @@ function renderList(m,items,syncing=false){
   const helper=m==='announcements'?(isAdmin()?'Los avisos se distribuyen automáticamente.':'Avisos publicados por Administración.'):(isAdmin()?'Bandeja central de solicitudes.':'Tu solicitud se envía a Administración.');
   body.innerHTML=`<p class="form-message">${helper}${syncing?' · Sincronizando…':''}</p><div class="homes-toolbar"><input id="communitySearch" type="search" placeholder="Buscar">${canCreate?'<button id="communityNew" type="button" class="primary-button compact-button">+ Nuevo</button>':''}</div><div class="module-list" id="communityList">${items.length?items.map(x=>row(m,x)).join(''):'<div class="empty-state">No hay registros todavía.</div>'}</div>`;
   document.querySelector('#communityNew')?.addEventListener('click',()=>showForm(m));
-  document.querySelector('#communitySearch').oninput=e=>{const q=e.target.value.toLowerCase(),f=items.filter(x=>JSON.stringify(x).toLowerCase().includes(q));document.querySelector('#communityList').innerHTML=f.length?f.map(x=>row(m,x)).join(''):'<div class="empty-state">Sin resultados.</div>';bind(m,items);};
+  const search=document.querySelector('#communitySearch');
+  if(search)search.oninput=e=>{const q=e.target.value.toLowerCase(),f=items.filter(x=>JSON.stringify(x).toLowerCase().includes(q));const list=document.querySelector('#communityList');if(list)list.innerHTML=f.length?f.map(x=>row(m,x)).join(''):'<div class="empty-state">Sin resultados.</div>';bind(m,items);};
   bind(m,items);
 }
 function bind(m,items){
@@ -96,14 +121,14 @@ function fields(m,x){
   if(m==='reservations')return `<label>Área<select name="area">${opts(['Gazebo','Cancha','Área recreativa','Salón'],x.area)}</select></label><label>Fecha<input name="date" type="date" required value="${esc(x.date||'')}"></label><label>Horario<select name="time">${opts(['9:00 AM – 1:00 PM','2:00 PM – 6:00 PM','6:00 PM – 10:00 PM'],x.time)}</select></label><label>Unidad<input name="homeId" required value="${esc(x.homeId||profile.homeId||'')}"></label><input type="hidden" name="status" value="${esc(x.status||'pending')}">`;
   return `<label>Título<input name="title" required value="${esc(x.title||'')}"></label><label>Mensaje<textarea name="message" required>${esc(x.message||'')}</textarea></label><label>Audiencia<select name="audience">${opts(['Todos','Residentes','Seguridad','Junta'],x.audience||'Todos')}</select></label><label>Fecha<input name="date" type="date" value="${esc(x.date||new Date().toISOString().slice(0,10))}"></label>`;
 }
-async function saveForm(e,m,id){e.preventDefault();const msg=document.querySelector('#communityMessage'),data=Object.fromEntries(new FormData(form).entries());msg.textContent='Guardando…';try{await save(m,id,data);openModule(m);}catch(err){msg.textContent=err.message||'No se pudo guardar.';}}
+async function saveForm(e,m,id){e.preventDefault();const msg=document.querySelector('#communityMessage'),data=Object.fromEntries(new FormData(form).entries());if(msg)msg.textContent='Guardando…';try{await save(m,id,data);openModule(m);}catch(err){if(msg)msg.textContent=err.message||'No se pudo guardar.';}}
 async function save(m,id,data){
   const normalized={...data,homeId:String(data.homeId||'').toUpperCase(),destination:m==='announcements'?data.audience:'Administración',createdRole:profile.role||'resident'};
   if(ready&&auth?.currentUser){const fs=await import('https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js');const payload={...normalized,updatedAt:fs.serverTimestamp(),updatedBy:auth.currentUser.uid};if(id)await fs.setDoc(fs.doc(db,...root(),m,id),payload,{merge:true});else await fs.addDoc(fs.collection(db,...root(),m),{...payload,createdAt:fs.serverTimestamp(),createdBy:auth.currentUser.uid,createdByName:profile.name||auth.currentUser.email||''});}
-  else{const a=readCache(m),r={...normalized,id:id||crypto.randomUUID(),createdBy:'local-user',createdAt:new Date().toISOString()},n=id?a.map(x=>x.id===id?{...x,...r}:x):[r,...a];writeCache(m,n);} await syncModule(m);
+  else{const a=readCache(m),r={...normalized,id:id||crypto.randomUUID(),createdBy:'local-user',createdAt:new Date().toISOString()},n=id?a.map(x=>x.id===id?{...x,...r}:x):[r,...a];writeCache(m,n);} await syncModule(m,true);
 }
 async function changeStatus(m,id,status){if(!isAdmin())return;const x=readCache(m).find(x=>x.id===id);if(x)await save(m,id,{...x,status});}
-async function removeItem(m,id){if(!isAdmin()||!confirm('¿Eliminar este registro?'))return;if(ready&&auth?.currentUser){const fs=await import('https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js');await fs.deleteDoc(fs.doc(db,...root(),m,id));}else writeCache(m,readCache(m).filter(x=>x.id!==id));await syncModule(m);openModule(m);}
+async function removeItem(m,id){if(!isAdmin()||!confirm('¿Eliminar este registro?'))return;if(ready&&auth?.currentUser){const fs=await import('https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js');await fs.deleteDoc(fs.doc(db,...root(),m,id));}else writeCache(m,readCache(m).filter(x=>x.id!==id));await syncModule(m,true);openModule(m);}
 function opts(a,c){return a.map(v=>`<option value="${esc(v)}" ${v===c?'selected':''}>${esc(v)}</option>`).join('');}
 function statusLabel(s){return ({pending:'Pendiente',delivered:'Entregado',returned:'Devuelto',open:'Abierta','in-progress':'En progreso',resolved:'Resuelta',closed:'Cerrada',approved:'Aprobada',rejected:'Rechazada',cancelled:'Cancelada'})[s]||s||'Pendiente';}
 function nextStatus(m,s){if(m==='packages')return s==='pending'?'delivered':null;if(m==='incidents')return s==='open'?'in-progress':s==='in-progress'?'resolved':null;if(m==='reservations')return s==='pending'?'approved':null;return null;}
