@@ -1,7 +1,7 @@
-const CACHE_NAME = 'neighbor-terra-lugo-v1.2.0';
+const CACHE_NAME = 'neighbor-terra-lugo-v1.2.1';
 const APP_SHELL = [
   './', './index.html', './styles.css', './hero.css', './homes.css', './desktop.css',
-  './app.js', './auth-actions.js', './admin-actions.js', './users-module.js',
+  './app.js', './auth-actions.js', './admin-actions.js', './desktop-modules.js', './users-module.js',
   './residents-module.js', './homes-module.js', './vehicles-module.js', './visits-module.js',
   './community-modules.js', './realtime-notifications.js', './notification-badges.js',
   './finance-module.js', './firebase-config.js', './firebase-service.js',
@@ -23,7 +23,7 @@ self.addEventListener('fetch', event => {
   const url = new URL(event.request.url);
   if (url.origin !== self.location.origin) return;
 
-  const isCode = event.request.mode === 'navigate' || /\.(?:js|html|css)$/.test(url.pathname) || url.pathname.endsWith('/');
+  const isCode = event.request.mode === 'navigate' || /\.(?:js|html)$/.test(url.pathname) || url.pathname.endsWith('/');
   if (isCode) {
     event.respondWith(
       fetch(event.request, { cache: 'no-store' })
