@@ -7,6 +7,7 @@ const body=document.querySelector('#dialogBody');
 const form=document.querySelector('#dialogForm');
 let auth=null,db=null,fs=null,profile=null,ready=false;
 let historyUnsubscribe=null;
+let scannerStream=null,scannerFrame=null,scannerBusy=false,jsQRDecoder=null;
 const root=()=>['apps',APP_NAMESPACE,'communities',COMMUNITY_ID];
 
 initialize();
@@ -22,14 +23,14 @@ document.addEventListener('click',event=>{
   else if(module==='directory'||text.includes('buscar residencia'))target='directory';
   else if(module==='history'||text.includes('historial de turno'))target='history';
   if(!target)return;
-  event.preventDefault();event.stopImmediatePropagation();stopHistoryListener();
+  event.preventDefault();event.stopImmediatePropagation();stopHistoryListener();stopScanner();
   if(target==='scan')openValidator();
   if(target==='entry')openManualEntry();
   if(target==='directory')openDirectory();
   if(target==='history')openHistory();
 },true);
 
-dialog?.addEventListener('close',stopHistoryListener);
+dialog?.addEventListener('close',()=>{stopHistoryListener();stopScanner();});
 
 async function initialize(){
   try{
@@ -51,35 +52,99 @@ function openDialog(section,heading){eyebrow.textContent=section;title.textConte
 function requireGuard(){if(!ready||!auth?.currentUser)throw new Error('No hay conexión con Firebase.');if(!isGuard())throw new Error('Esta función requiere un usuario de Seguridad activo.');}
 
 function openValidator(){
-  openDialog('Neighbor Guard','Validar acceso');
-  body.innerHTML=`<div class="scanner-demo"><span>▣</span><strong>Validar pase</strong><p>Escribe el código de 6 dígitos o pega el contenido del QR.</p></div><label>Código o QR<input id="guardCode" autocomplete="off" inputmode="numeric" placeholder="123456"></label><button id="guardValidate" type="button" class="primary-button">Validar acceso</button><div id="guardResult" style="margin-top:14px"></div>`;
+  openDialog('Neighbor Guard','Escanear visita');
+  body.innerHTML=`<div class="scanner-demo"><span>▣</span><strong>Escáner QR</strong><p>Apunta la cámara al QR creado por el residente.</p></div><div id="guardCameraWrap" style="position:relative;overflow:hidden;border-radius:16px;background:#071522;min-height:220px;display:grid;place-items:center"><video id="guardCamera" playsinline muted style="width:100%;max-height:420px;object-fit:cover;display:none"></video><div id="guardCameraPlaceholder" style="color:white;text-align:center;padding:30px">📷<br>Preparando cámara…</div><div style="position:absolute;inset:18%;border:2px solid rgba(255,255,255,.9);border-radius:16px;pointer-events:none"></div></div><div class="form-actions" style="margin-top:12px"><button id="guardStartCamera" type="button" class="primary-button">Abrir cámara</button><button id="guardStopCamera" type="button" class="secondary-button">Detener</button></div><p id="guardCameraMessage" class="form-message">También puedes usar el código de respaldo.</p><label>Código de 6 dígitos<input id="guardCode" autocomplete="off" inputmode="numeric" maxlength="6" placeholder="123456"></label><button id="guardValidate" type="button" class="secondary-button">Validar código</button><div id="guardResult" style="margin-top:14px"></div>`;
   const input=document.querySelector('#guardCode');
   document.querySelector('#guardValidate').onclick=()=>validateAccess(input.value);
+  document.querySelector('#guardStartCamera').onclick=startScanner;
+  document.querySelector('#guardStopCamera').onclick=stopScanner;
   input.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();validateAccess(e.currentTarget.value);}});
-  setTimeout(()=>input.focus(),50);
+  setTimeout(()=>startScanner().catch(()=>{}),100);
+}
+
+async function startScanner(){
+  if(scannerStream||scannerBusy)return;
+  const video=document.querySelector('#guardCamera'),placeholder=document.querySelector('#guardCameraPlaceholder'),message=document.querySelector('#guardCameraMessage');
+  if(!video)return;
+  scannerBusy=true;
+  try{
+    requireGuard();
+    if(!navigator.mediaDevices?.getUserMedia)throw new Error('Este dispositivo no permite usar la cámara desde el navegador.');
+    if(message)message.textContent='Solicitando acceso a la cámara…';
+    scannerStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:720}},audio:false});
+    video.srcObject=scannerStream;video.style.display='block';if(placeholder)placeholder.style.display='none';
+    await video.play();
+    if(message)message.textContent='Cámara activa · apunta al QR de Neighbor.';
+    scannerBusy=false;
+    scanFrame();
+  }catch(error){
+    scannerBusy=false;stopScanner();
+    if(message)message.textContent=cameraError(error);
+  }
+}
+
+async function scanFrame(){
+  const video=document.querySelector('#guardCamera');
+  if(!scannerStream||!video||video.readyState<2){scannerFrame=requestAnimationFrame(scanFrame);return;}
+  try{
+    let raw='';
+    if('BarcodeDetector'in window){
+      const detector=new BarcodeDetector({formats:['qr_code']});
+      const codes=await detector.detect(video);
+      raw=codes?.[0]?.rawValue||'';
+    }else{
+      if(!jsQRDecoder){const mod=await import('https://cdn.jsdelivr.net/npm/jsqr@1.4.0/+esm');jsQRDecoder=mod.default||mod;}
+      const canvas=document.createElement('canvas'),ctx=canvas.getContext('2d',{willReadFrequently:true});
+      const scale=Math.min(1,960/video.videoWidth);canvas.width=Math.max(1,Math.round(video.videoWidth*scale));canvas.height=Math.max(1,Math.round(video.videoHeight*scale));
+      ctx.drawImage(video,0,0,canvas.width,canvas.height);const image=ctx.getImageData(0,0,canvas.width,canvas.height);raw=jsQRDecoder(image.data,image.width,image.height,{inversionAttempts:'dontInvert'})?.data||'';
+    }
+    if(raw){
+      const message=document.querySelector('#guardCameraMessage');if(message)message.textContent='QR detectado · validando…';
+      stopScanner();
+      await validateAccess(raw);
+      return;
+    }
+  }catch(error){console.debug('Lectura QR:',error);}
+  if(scannerStream)scannerFrame=requestAnimationFrame(scanFrame);
+}
+
+function stopScanner(){
+  if(scannerFrame){cancelAnimationFrame(scannerFrame);scannerFrame=null;}
+  if(scannerStream){scannerStream.getTracks().forEach(track=>track.stop());scannerStream=null;}
+  scannerBusy=false;
+  const video=document.querySelector('#guardCamera'),placeholder=document.querySelector('#guardCameraPlaceholder');
+  if(video){video.pause?.();video.srcObject=null;video.style.display='none';}
+  if(placeholder)placeholder.style.display='block';
+}
+
+function cameraError(error){
+  const name=String(error?.name||'');
+  if(name==='NotAllowedError'||name==='PermissionDeniedError')return'Permiso de cámara denegado. Actívalo en Safari/Ajustes y vuelve a tocar “Abrir cámara”.';
+  if(name==='NotFoundError'||name==='DevicesNotFoundError')return'No se encontró una cámara disponible.';
+  if(name==='NotReadableError')return'La cámara está siendo utilizada por otra aplicación.';
+  return cleanError(error)||'No se pudo iniciar la cámara.';
 }
 
 async function validateAccess(value){
   const output=document.querySelector('#guardResult');
   const input=String(value||'').trim();
-  if(!input){output.innerHTML='<p class="form-message">Escribe un código o pega el QR.</p>';return;}
+  if(!input){output.innerHTML='<p class="form-message">Escanea un QR o escribe el código.</p>';return;}
   try{requireGuard();}catch(error){output.innerHTML=`<p class="form-message">${esc(error.message)}</p>`;return;}
   output.innerHTML='<div class="empty-state">Validando…</div>';
   try{
     let visit=null,tokenValid=true;
     const parsed=parsePassPayload(input);
     if(parsed?.visitId){
+      if(parsed.communityId&&parsed.communityId!==COMMUNITY_ID)throw new Error('Este QR pertenece a otra comunidad.');
       const snap=await fs.getDoc(fs.doc(db,...root(),'visits',parsed.visitId));
       if(snap.exists()){
-        const data=snap.data();
-        tokenValid=!data.token||Boolean(parsed.token&&parsed.token===data.token);
-        if(tokenValid)visit={id:snap.id,...data};
+        const data=snap.data();tokenValid=!data.token||Boolean(parsed.token&&parsed.token===data.token);if(tokenValid)visit={id:snap.id,...data};
       }
     }else if(/^\d{6}$/.test(input)){
       const snap=await fs.getDocs(fs.query(fs.collection(db,...root(),'visits'),fs.where('code','==',input),fs.limit(2)));
       if(snap.size===1)visit={id:snap.docs[0].id,...snap.docs[0].data()};
       if(snap.size>1)throw new Error('Código duplicado. Valida con QR o contacta Administración.');
-    }else throw new Error('El código debe tener 6 dígitos o ser un QR válido de Neighbor.');
+    }else throw new Error('El QR no es válido o el código no tiene 6 dígitos.');
     if(!tokenValid){await logDenied(null,'QR con token inválido');throw new Error('QR inválido o alterado.');}
     if(!visit){await logDenied(null,'Pase no encontrado');renderValidation(null);return;}
     renderValidation(visit);
@@ -95,8 +160,9 @@ function renderValidation(visit){
   const output=document.querySelector('#guardResult');
   if(!visit){output.innerHTML='<article><strong>⛔ Pase no encontrado</strong><p>Verifica el código con el residente.</p></article>';return;}
   const check=evaluateVisit(visit);
-  output.innerHTML=`<article class="home-row"><div><strong>${check.allowed?'✅':'⛔'} ${esc(visit.visitorName||'Visitante')}</strong><p>Unidad ${esc(visit.homeId||'')} · ${esc(visit.visitType||'Visita')} · ${esc(visit.plate||'Sin tablilla')}<br>${esc(check.label)} · Expira ${esc(formatDate(visit.expiresAt))}</p></div></article>${check.allowed?`<button type="button" id="guardState" class="primary-button">${visit.status==='active'?'Registrar salida':'Registrar entrada'}</button>`:`<p class="form-message">${esc(check.reason)}</p>`}`;
+  output.innerHTML=`<article class="home-row"><div><strong>${check.allowed?'✅':'⛔'} ${esc(visit.visitorName||'Visitante')}</strong><p>Unidad ${esc(visit.homeId||'')} · ${esc(visit.visitType||'Visita')} · ${esc(visit.plate||'Sin tablilla')}<br>${esc(check.label)} · Expira ${esc(formatDate(visit.expiresAt))}</p></div></article>${check.allowed?`<button type="button" id="guardState" class="primary-button">${visit.status==='active'?'Registrar salida':'Registrar entrada'}</button><button type="button" id="guardScanAnother" class="secondary-button">Escanear otro</button>`:`<p class="form-message">${esc(check.reason)}</p><button type="button" id="guardScanAnother" class="secondary-button">Escanear otro</button>`}`;
   document.querySelector('#guardState')?.addEventListener('click',()=>changeAccessState(visit,visit.status==='active'?'completed':'active',visit.status==='active'?'exit':'entry'));
+  document.querySelector('#guardScanAnother')?.addEventListener('click',openValidator);
   if(!check.allowed)logDenied(visit,check.reason).catch(()=>{});
 }
 
@@ -124,9 +190,7 @@ async function changeAccessState(visit,status,eventType){
   }catch(error){alert(cleanError(error));}
 }
 
-async function writeAccessLog(eventType,visit,extra={}){
-  return fs.addDoc(fs.collection(db,...root(),'accessLogs'),{eventType,visitId:visit?.id||'',visitorName:visit?.visitorName||'',homeId:visit?.homeId||'',plate:visit?.plate||'',guardId:auth.currentUser.uid,guardName:guardName(),createdAt:fs.serverTimestamp(),...extra});
-}
+async function writeAccessLog(eventType,visit,extra={}){return fs.addDoc(fs.collection(db,...root(),'accessLogs'),{eventType,visitId:visit?.id||'',visitorName:visit?.visitorName||'',homeId:visit?.homeId||'',plate:visit?.plate||'',guardId:auth.currentUser.uid,guardName:guardName(),createdAt:fs.serverTimestamp(),...extra});}
 async function logDenied(visit,reason){try{requireGuard();await writeAccessLog('denied',visit,{reason:String(reason||'Acceso denegado')});}catch{}}
 
 function openManualEntry(){
