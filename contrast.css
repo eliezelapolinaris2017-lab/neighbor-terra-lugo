@@ -1,0 +1,33 @@
+:root{--muted:#475569;--border:#cbd5e1;--danger:#b91c1c}
+body{color:var(--text)}
+.eyebrow,.login-copy,.brand-lockup small,.role-card small,.action-card small,.timeline-item p,.timeline-item time,.empty-state,.metric-grid span,dialog p,.notification-meta{color:#475569}
+input,select,textarea{border-color:#cbd5e1;background:#fff;color:#0f172a}
+input::placeholder,textarea::placeholder{color:#64748b;opacity:1}
+.text-button{color:#0b4f87}
+.secondary-button,.row-actions button,.notification-actions button,.calendar-toolbar button{color:#0f172a;background:#f8fafc;border:1px solid #cbd5e1}
+.secondary-button:hover,.row-actions button:hover,.notification-actions button:hover{background:#eef2f7}
+.module-list article{background:#f8fafc;color:#0f172a;border-color:#cbd5e1}
+.module-list article p,.module-list article small{color:#475569}
+.action-card{border-color:#cbd5e1}
+.action-card strong,.timeline-item strong,.module-list article strong,.metric-grid strong,label{color:#0f172a}
+.connection-banner{background:#fff7ed;color:#7c2d12;border-color:#fdba74}
+.connection-banner[data-connected="true"]{background:#ecfdf5;color:#14532d;border-color:#86efac}
+.form-message{color:#b91c1c;font-weight:650}
+.scanner-demo{background:#f8fafc;border-color:#94a3b8}
+.scanner-demo p{color:#475569}
+.bottom-nav{border-color:#cbd5e1}
+.nav-item{color:#475569}.nav-item.active{color:#0b4f87}
+@media(prefers-color-scheme:dark){
+  :root{--background:#07111f;--surface:#111c2b;--text:#f8fafc;--muted:#cbd5e1;--border:#475569;--danger:#fca5a5}
+  .eyebrow,.login-copy,.brand-lockup small,.role-card small,.action-card small,.timeline-item p,.timeline-item time,.empty-state,.metric-grid span,dialog p,.notification-meta,.module-list article p,.module-list article small,.scanner-demo p{color:#cbd5e1}
+  input,select,textarea{background:#0b1625;color:#f8fafc;border-color:#64748b}
+  input::placeholder,textarea::placeholder{color:#94a3b8}
+  .text-button{color:#93c5fd}
+  .secondary-button,.row-actions button,.notification-actions button,.calendar-toolbar button{background:#162235;color:#f8fafc;border-color:#64748b}
+  .module-list article,.scanner-demo{background:#0b1625;color:#f8fafc;border-color:#475569}
+  .action-card strong,.timeline-item strong,.module-list article strong,.metric-grid strong,label{color:#f8fafc}
+  .connection-banner{background:#3b210c;color:#fed7aa;border-color:#c2410c}
+  .connection-banner[data-connected="true"]{background:#052e16;color:#bbf7d0;border-color:#22c55e}
+  .form-message{color:#fecaca}
+  .nav-item{color:#cbd5e1}.nav-item.active{color:#bfdbfe}
+}
