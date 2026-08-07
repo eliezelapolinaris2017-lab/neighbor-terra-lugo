@@ -17,13 +17,18 @@ export async function initializeNeighborFirebase() {
     const app = appModule.getApps().length ? appModule.getApp() : appModule.initializeApp(firebaseConfig);
     auth = authModule.getAuth(app);
 
-    // Safari privado puede fallar o demorarse con persistencia IndexedDB.
-    // Preferimos sesión del navegador y caemos a memoria si el almacenamiento está restringido.
+    // Mantener la sesión activa incluso después de refresh, cerrar/reabrir pestaña o volver a la PWA.
+    // Si Safari bloquea almacenamiento persistente, degradamos de forma segura a sesión y luego memoria.
     try {
-      await timeout(authModule.setPersistence(auth, authModule.browserSessionPersistence), 2500);
-    } catch (error) {
-      console.warn('Persistencia de sesión no disponible; usando memoria.', error);
-      try { await authModule.setPersistence(auth, authModule.inMemoryPersistence); } catch {}
+      await timeout(authModule.setPersistence(auth, authModule.browserLocalPersistence), 3000);
+    } catch (localError) {
+      console.warn('Persistencia local no disponible; usando persistencia de sesión.', localError);
+      try {
+        await timeout(authModule.setPersistence(auth, authModule.browserSessionPersistence), 2500);
+      } catch (sessionError) {
+        console.warn('Persistencia de sesión no disponible; usando memoria.', sessionError);
+        try { await authModule.setPersistence(auth, authModule.inMemoryPersistence); } catch {}
+      }
     }
 
     db = (await firestore()).getFirestore(app);
