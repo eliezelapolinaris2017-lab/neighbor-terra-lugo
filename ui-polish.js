@@ -14,46 +14,47 @@
 
   function sanitizeText(value){
     let text=String(value??'');
-    replacements.forEach(([pattern,next])=>{text=text.replace(pattern,next);});
+    for(const [pattern,next] of replacements) text=text.replace(pattern,next);
     return text;
   }
 
   function cleanNode(node){
     if(!node)return;
     if(node.nodeType===Node.TEXT_NODE){
-      const next=sanitizeText(node.nodeValue);
-      if(next!==node.nodeValue)node.nodeValue=next;
+      const current=node.nodeValue||'';
+      const next=sanitizeText(current);
+      if(next!==current) node.nodeValue=next;
       return;
     }
     if(node.nodeType!==Node.ELEMENT_NODE)return;
     if(['SCRIPT','STYLE','NOSCRIPT'].includes(node.tagName))return;
     if(node.hasAttribute?.('aria-label')){
-      const current=node.getAttribute('aria-label');
+      const current=node.getAttribute('aria-label')||'';
       const next=sanitizeText(current);
-      if(next!==current)node.setAttribute('aria-label',next);
+      if(next!==current) node.setAttribute('aria-label',next);
     }
-    node.childNodes.forEach(cleanNode);
+    [...node.childNodes].forEach(cleanNode);
   }
 
-  function normalizeConnectionBanner(){
+  function patchBanner(){
     const banner=document.querySelector('#connectionBanner');
     if(!banner)return;
-    const text=sanitizeText(banner.textContent);
-    if(banner.dataset.connected==='true'){
-      if(!/conectado a la nube/i.test(text))banner.textContent='Conectado a la nube · datos protegidos por usuario';
-    }else if(/firebase|base de datos|nube/i.test(text)){
-      banner.textContent=text;
+    const current=banner.textContent||'';
+    let next=sanitizeText(current);
+    if(banner.dataset.connected==='true' && !/conectado a la nube/i.test(next)){
+      next='Conectado a la nube · datos protegidos por usuario';
     }
+    if(next!==current) banner.textContent=next;
   }
 
   cleanNode(document.body);
-  normalizeConnectionBanner();
+  patchBanner();
+
   const observer=new MutationObserver(records=>{
-    records.forEach(record=>{
-      if(record.type==='characterData')cleanNode(record.target);
-      record.addedNodes.forEach(cleanNode);
-    });
-    normalizeConnectionBanner();
+    for(const record of records){
+      for(const node of record.addedNodes) cleanNode(node);
+    }
+    patchBanner();
   });
-  observer.observe(document.body,{childList:true,subtree:true,characterData:true});
+  observer.observe(document.body,{childList:true,subtree:true});
 })();
