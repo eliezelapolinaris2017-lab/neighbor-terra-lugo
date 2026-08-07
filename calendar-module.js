@@ -117,8 +117,21 @@ function addIncidentScheduleFields(){
   if(!isAdmin()||!title?.textContent?.toLowerCase().includes('incidencia')||form.querySelector('[name="scheduledDate"]'))return;
   const priority=form.querySelector('[name="priority"]')?.closest('label');
   if(!priority)return;
-  const wrap=document.createElement('div');wrap.className='form-grid';wrap.innerHTML='<label>Fecha programada de reparación<input name="scheduledDate" type="date"></label><label>Hora<input name="scheduledTime" type="time"></label>';
+  const existing=findEditingIncident();
+  const wrap=document.createElement('div');
+  wrap.className='form-grid';
+  wrap.innerHTML=`<label>Fecha programada de reparación<input name="scheduledDate" type="date" value="${esc(existing?.scheduledDate||'')}"></label><label>Hora<input name="scheduledTime" type="time" value="${esc(existing?.scheduledTime||'')}"></label>`;
   priority.insertAdjacentElement('afterend',wrap);
+}
+
+function findEditingIncident(){
+  if(!title.textContent.toLowerCase().startsWith('editar'))return null;
+  let items=[];
+  try{items=JSON.parse(localStorage.getItem(`neighbor-${COMMUNITY_ID}-incidents`))||[];}catch{}
+  const category=form.querySelector('[name="category"]')?.value||'';
+  const location=form.querySelector('[name="location"]')?.value||'';
+  const description=form.querySelector('[name="description"]')?.value||'';
+  return items.find(x=>String(x.category||'')===category&&String(x.location||'')===location&&String(x.description||'')===description)||null;
 }
 
 function installStyles(){
