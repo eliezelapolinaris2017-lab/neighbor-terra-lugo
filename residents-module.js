@@ -11,10 +11,9 @@ const dialogForm = document.querySelector('#dialogForm');
 let residents = loadCache();
 let editingId = null;
 let syncPromise = null;
+let lastSync = 0;
 
-prefetchResidents();
-
-document.addEventListener('click', async (event) => {
+document.addEventListener('click', (event) => {
   const card = event.target.closest('.action-card, .nav-item');
   if (!card || !card.textContent.toLowerCase().includes('residentes')) return;
   event.preventDefault();
@@ -28,25 +27,22 @@ function openResidents() {
   residents = residents.length ? residents : loadCache();
   renderResidents();
   if (!dialog.open) dialog.showModal();
-  syncResidents(true);
-}
-
-async function prefetchResidents() {
-  if (!isFirebaseReady()) return;
-  await syncResidents(false);
+  if (Date.now() - lastSync > 45000) syncResidents(true);
 }
 
 async function syncResidents(renderWhenOpen = false) {
-  if (!isFirebaseReady()) return;
+  if (!isFirebaseReady()) return residents;
   if (syncPromise) return syncPromise;
   syncPromise = listResidents()
     .then((items) => {
       residents = Array.isArray(items) ? items : [];
       saveCache(residents);
+      lastSync = Date.now();
       if (renderWhenOpen && dialog.open && dialogTitle.textContent.toLowerCase().includes('residentes')) renderResidents();
       window.dispatchEvent(new CustomEvent('neighbor:module-synced', { detail: { module: 'residents', count: residents.length } }));
+      return residents;
     })
-    .catch((error) => console.warn('No se pudieron sincronizar residentes.', error))
+    .catch((error) => { console.warn('No se pudieron sincronizar residentes.', error); return residents; })
     .finally(() => { syncPromise = null; });
   return syncPromise;
 }
@@ -62,8 +58,8 @@ function renderResidents(filter = '') {
     <div class="module-list homes-list">
       ${filtered.length ? filtered.map(residentCard).join('') : '<div class="empty-state">No hay residentes registrados.</div>'}
     </div>`;
-  document.querySelector('#residentSearch').addEventListener('input', (event) => renderResidents(event.target.value));
-  document.querySelector('#newResidentButton').addEventListener('click', () => showResidentForm());
+  document.querySelector('#residentSearch')?.addEventListener('input', (event) => renderResidents(event.target.value));
+  document.querySelector('#newResidentButton')?.addEventListener('click', () => showResidentForm());
   document.querySelectorAll('[data-edit-resident]').forEach((button) => button.addEventListener('click', () => showResidentForm(button.dataset.editResident)));
   document.querySelectorAll('[data-delete-resident]').forEach((button) => button.addEventListener('click', () => removeResident(button.dataset.deleteResident)));
 }
@@ -93,7 +89,7 @@ function showResidentForm(id = null) {
     <label>Estado<select name="status"><option value="active" ${resident.status !== 'inactive' ? 'selected' : ''}>Activo</option><option value="inactive" ${resident.status === 'inactive' ? 'selected' : ''}>Inactivo</option></select></label>
     <div class="form-actions"><button class="secondary-button" id="cancelResidentForm" type="button">Cancelar</button><button class="primary-button" type="submit">Guardar</button></div>
     <p class="form-message" id="residentFormMessage"></p>`;
-  document.querySelector('#cancelResidentForm').addEventListener('click', () => { dialogTitle.textContent = 'Residentes'; renderResidents(); });
+  document.querySelector('#cancelResidentForm')?.addEventListener('click', () => { dialogTitle.textContent = 'Residentes'; renderResidents(); });
   dialogForm.onsubmit = saveResident;
 }
 
@@ -101,10 +97,11 @@ async function saveResident(event) {
   event.preventDefault();
   const data = Object.fromEntries(new FormData(dialogForm).entries());
   const message = document.querySelector('#residentFormMessage');
-  message.textContent = 'Guardando…';
+  if(message) message.textContent = 'Guardando…';
   try {
     if (isFirebaseReady()) {
       if (editingId) await updateResident(editingId, data); else await createResident(data);
+      lastSync = 0;
       await syncResidents(false);
     } else {
       saveLocal(data, editingId);
@@ -114,7 +111,7 @@ async function saveResident(event) {
     editingId = null;
     dialogTitle.textContent = 'Residentes';
     renderResidents();
-  } catch (error) { message.textContent = error.message || 'No se pudo guardar.'; }
+  } catch (error) { if(message) message.textContent = error.message || 'No se pudo guardar.'; }
 }
 
 async function removeResident(id) {
@@ -126,6 +123,7 @@ async function removeResident(id) {
       residents = residents.filter((item) => item.id !== id);
       saveCache(residents);
       renderResidents();
+      lastSync = 0;
       syncResidents(true);
     } else {
       residents = loadLocal().filter((item) => item.id !== id);
@@ -137,21 +135,11 @@ async function removeResident(id) {
 }
 
 function loadCache() {
-  try {
-    const saved = JSON.parse(localStorage.getItem(CACHE_KEY));
-    if (Array.isArray(saved)) return saved;
-  } catch {}
+  try { const saved = JSON.parse(localStorage.getItem(CACHE_KEY)); if (Array.isArray(saved)) return saved; } catch {}
   return loadLocal();
 }
-
-function saveCache(items) {
-  localStorage.setItem(CACHE_KEY, JSON.stringify(Array.isArray(items) ? items : []));
-}
-
-function loadLocal() {
-  try { const saved = JSON.parse(localStorage.getItem(LOCAL_KEY)); return Array.isArray(saved) ? saved : []; } catch { return []; }
-}
-
+function saveCache(items) { try { localStorage.setItem(CACHE_KEY, JSON.stringify(Array.isArray(items) ? items : [])); } catch {} }
+function loadLocal() { try { const saved = JSON.parse(localStorage.getItem(LOCAL_KEY)); return Array.isArray(saved) ? saved : []; } catch { return []; } }
 function saveLocal(data, id) {
   const current = loadLocal();
   const record = { id:id || crypto.randomUUID(), name:String(data.name || '').trim(), homeId:String(data.homeId || '').trim().toUpperCase(), email:String(data.email || '').trim().toLowerCase(), phone:String(data.phone || '').trim(), residentType:data.residentType || 'owner', status:data.status || 'active', emergencyContact:String(data.emergencyContact || '').trim() };
@@ -160,5 +148,4 @@ function saveLocal(data, id) {
   current.sort((a,b) => a.name.localeCompare(b.name));
   localStorage.setItem(LOCAL_KEY, JSON.stringify(current));
 }
-
 function escapeHtml(value) { return String(value ?? '').replace(/[&<>'"]/g, (char) => ({ '&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;' }[char])); }
