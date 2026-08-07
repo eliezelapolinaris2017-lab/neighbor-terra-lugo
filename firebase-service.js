@@ -5,6 +5,10 @@ let db = null;
 let firebaseReady = false;
 const appRoot = () => ['apps', APP_NAMESPACE, 'communities', COMMUNITY_ID];
 const firestore = () => import('https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js');
+const timeout = (promise, ms, message = 'La operación tardó demasiado.') => Promise.race([
+  promise,
+  new Promise((_, reject) => setTimeout(() => reject(new Error(message)), ms))
+]);
 
 export async function initializeNeighborFirebase() {
   try {
@@ -26,20 +30,51 @@ export function isFirebaseReady() { return firebaseReady; }
 export async function signInNeighbor(email, password) {
   if (!auth) throw new Error('Firebase no está configurado.');
   const { signInWithEmailAndPassword } = await import('https://www.gstatic.com/firebasejs/12.1.0/firebase-auth.js');
-  const credential = await signInWithEmailAndPassword(auth, email, password);
-  let profile = await ensureUserProfile(credential.user);
-  profile = await syncProfileWithResident(credential.user, profile);
+
+  const credential = await timeout(
+    signInWithEmailAndPassword(auth, String(email || '').trim(), String(password || '')),
+    12000,
+    'Firebase no respondió al iniciar sesión. Intenta nuevamente.'
+  );
+
+  let profile = null;
+  try {
+    profile = await timeout(getUserProfile(credential.user.uid), 5000, 'El perfil tardó demasiado.');
+  } catch (error) {
+    console.warn('Perfil no disponible inmediatamente:', error);
+  }
+
+  if (!profile) {
+    const fallbackName = credential.user.displayName || credential.user.email?.split('@')[0] || 'Residente';
+    profile = {
+      uid: credential.user.uid,
+      email: (credential.user.email || '').trim().toLowerCase(),
+      name: fallbackName,
+      initials: makeInitials(fallbackName),
+      role: 'resident',
+      communityId: COMMUNITY_ID,
+      status: 'active'
+    };
+    ensureUserProfile(credential.user).catch((error) => console.warn('Perfil se completará en segundo plano:', error));
+  }
+
   if (profile.status === 'inactive') {
-    await signOutNeighbor();
+    await signOutNeighbor().catch(() => {});
     throw new Error('Tu acceso está desactivado. Comunícate con la administración.');
   }
+
+  // No bloquear el login esperando consultas adicionales de residentes.
+  syncProfileWithResident(credential.user, profile).catch((error) => {
+    console.warn('Sincronización de residente en segundo plano:', error);
+  });
+
   return { user: credential.user, profile };
 }
 
 export async function signOutNeighbor() {
   if (!auth) return;
   const { signOut } = await import('https://www.gstatic.com/firebasejs/12.1.0/firebase-auth.js');
-  await signOut(auth);
+  await timeout(signOut(auth), 5000, 'No se pudo cerrar la sesión a tiempo.').catch(() => {});
 }
 
 export async function getUserProfile(uid) {
@@ -58,7 +93,7 @@ async function ensureUserProfile(user) {
     uid: user.uid,
     email: (user.email || '').trim().toLowerCase(),
     name: fallbackName,
-    initials: fallbackName.slice(0, 2).toUpperCase(),
+    initials: makeInitials(fallbackName),
     role: 'resident',
     communityId: COMMUNITY_ID,
     status: 'active',
@@ -73,7 +108,11 @@ async function syncProfileWithResident(user, profile) {
   if (!db || !email) return profile;
   try {
     const { collection, doc, getDocs, limit, query, serverTimestamp, setDoc, where } = await firestore();
-    const snapshot = await getDocs(query(collection(db, ...appRoot(), 'residents'), where('email', '==', email), limit(1)));
+    const snapshot = await timeout(
+      getDocs(query(collection(db, ...appRoot(), 'residents'), where('email', '==', email), limit(1))),
+      5000,
+      'La ficha del residente tardó demasiado.'
+    );
     if (snapshot.empty) return profile;
 
     const residentDoc = snapshot.docs[0];
@@ -83,7 +122,7 @@ async function syncProfileWithResident(user, profile) {
       ...profile,
       email,
       name,
-      initials: name.slice(0, 2).toUpperCase(),
+      initials: makeInitials(name),
       homeId: String(resident.homeId || profile.homeId || '').trim().toUpperCase(),
       phone: String(resident.phone || profile.phone || '').trim(),
       residentType: resident.residentType || profile.residentType || 'resident',
@@ -91,7 +130,8 @@ async function syncProfileWithResident(user, profile) {
       status: resident.status === 'inactive' ? 'inactive' : (profile.status || 'active'),
       syncedAt: serverTimestamp()
     };
-    await setDoc(doc(db, ...appRoot(), 'users', user.uid), linkedProfile, { merge: true });
+    await timeout(setDoc(doc(db, ...appRoot(), 'users', user.uid), linkedProfile, { merge: true }), 5000);
+    window.dispatchEvent(new CustomEvent('neighbor:profile-updated', { detail: { ...linkedProfile, uid: user.uid, syncedAt: null } }));
     return { ...linkedProfile, syncedAt: null };
   } catch (error) {
     console.warn('No se pudo enlazar el perfil con la ficha del residente:', error);
@@ -241,6 +281,10 @@ function normalizeVehicle(vehicle, audit = {}) {
     status: vehicle.status || 'active',
     ...audit
   };
+}
+
+function makeInitials(name) {
+  return String(name || '').trim().split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase();
 }
 
 function requireUser(action) {
