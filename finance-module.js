@@ -11,6 +11,8 @@ let app, auth, db, fs;
 let profile = null;
 let records = loadCache();
 let ready = false;
+let syncPromise = null;
+let lastSync = 0;
 
 initialize();
 
@@ -25,14 +27,15 @@ async function initialize(){
     ready = true;
     authMod.onAuthStateChanged(auth, async user => {
       if(!user){ profile = null; return; }
-      const snap = await fs.getDoc(fs.doc(db,'apps',APP_NAMESPACE,'communities',COMMUNITY_ID,'users',user.uid));
-      profile = snap.exists() ? {uid:user.uid,...snap.data()} : {uid:user.uid,role:'resident'};
-      syncFinance().catch(()=>{});
+      try{
+        const snap = await fs.getDoc(fs.doc(db,'apps',APP_NAMESPACE,'communities',COMMUNITY_ID,'users',user.uid));
+        profile = snap.exists() ? {uid:user.uid,...snap.data()} : {uid:user.uid,role:'resident'};
+      }catch(error){ console.warn('No se pudo cargar el perfil financiero.', error); }
     });
   }catch(error){ console.warn('Finanzas en modo local.', error); }
 }
 
-document.addEventListener('click', async event => {
+document.addEventListener('click', event => {
   const button = event.target.closest('.action-card,.nav-item,[data-neighbor-finance]');
   if(!button) return;
   const text = button.textContent.toLowerCase();
@@ -51,7 +54,9 @@ function openFinance(){
   form.onsubmit = null;
   renderFinance();
   if(!dialog.open) dialog.showModal();
-  syncFinance().then(renderFinance).catch(()=>{});
+  if(Date.now() - lastSync > 45000) syncFinance().then(()=>{
+    if(dialog.open && ['Finanzas','Estado de cuenta'].includes(title.textContent)) renderFinance();
+  }).catch(()=>{});
 }
 
 function visibleRecords(){
@@ -74,7 +79,7 @@ function totals(items){
 function renderFinance(filter=''){
   const items = visibleRecords();
   const q = filter.trim().toLowerCase();
-  const filtered = items.filter(item => JSON.stringify(item).toLowerCase().includes(q));
+  const filtered = items.filter(item => `${item.description||''} ${item.homeId||''} ${item.reference||''} ${item.date||''}`.toLowerCase().includes(q));
   const t = totals(items);
   body.innerHTML = `
     <div class="balance-card">
@@ -133,15 +138,13 @@ async function saveMovement(event,id){
     userId:String(data.userId||'').trim()
   };
   if(!payload.homeId || !payload.description || !(payload.amount>=0)) return;
-  message.textContent='Guardando…';
+  if(message) message.textContent='Guardando…';
   try{
     if(ready && auth?.currentUser){
-      if(id){
-        await fs.setDoc(fs.doc(db,...root(),id),{...payload,updatedBy:auth.currentUser.uid,updatedAt:fs.serverTimestamp()},{merge:true});
-      }else{
-        await fs.addDoc(fs.collection(db,...root()),{...payload,createdBy:auth.currentUser.uid,createdAt:fs.serverTimestamp(),updatedAt:fs.serverTimestamp()});
-      }
-      await syncFinance();
+      if(id) await fs.setDoc(fs.doc(db,...root(),id),{...payload,updatedBy:auth.currentUser.uid,updatedAt:fs.serverTimestamp()},{merge:true});
+      else await fs.addDoc(fs.collection(db,...root()),{...payload,createdBy:auth.currentUser.uid,createdAt:fs.serverTimestamp(),updatedAt:fs.serverTimestamp()});
+      lastSync = 0;
+      await syncFinance(true);
     }else{
       const record={...payload,id:id||crypto.randomUUID(),createdAt:new Date().toISOString()};
       records=id?records.map(r=>r.id===id?{...r,...record}:r):[record,...records];
@@ -149,7 +152,7 @@ async function saveMovement(event,id){
     }
     title.textContent='Finanzas';
     renderFinance();
-  }catch(error){message.textContent=error.message||'No se pudo guardar.';}
+  }catch(error){if(message) message.textContent=error.message||'No se pudo guardar.';}
 }
 
 async function removeMovement(id){
@@ -157,23 +160,27 @@ async function removeMovement(id){
   try{
     if(ready && auth?.currentUser) await fs.deleteDoc(fs.doc(db,...root(),id));
     records=records.filter(r=>r.id!==id); saveCache(); renderFinance();
+    lastSync = 0; syncFinance(true);
   }catch(error){alert(error.message||'No se pudo eliminar.');}
 }
 
-async function syncFinance(){
+async function syncFinance(force=false){
   if(!ready || !auth?.currentUser) return records;
-  try{
-    const snap = await fs.getDocs(fs.query(fs.collection(db,...root()),fs.orderBy('date','desc')));
-    records=snap.docs.map(d=>({id:d.id,...d.data()}));
-  }catch{
-    const snap=await fs.getDocs(fs.collection(db,...root()));
-    records=snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')));
-  }
-  saveCache();
-  return records;
+  if(!force && Date.now()-lastSync<45000) return records;
+  if(syncPromise) return syncPromise;
+  syncPromise=(async()=>{
+    try{
+      let snap;
+      try{ snap = await fs.getDocs(fs.query(fs.collection(db,...root()),fs.orderBy('date','desc'),fs.limit(100))); }
+      catch{ snap = await fs.getDocs(fs.collection(db,...root())); }
+      records=snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')));
+      saveCache(); lastSync=Date.now(); return records;
+    }finally{ syncPromise=null; }
+  })();
+  return syncPromise;
 }
 
 function loadCache(){try{const x=JSON.parse(localStorage.getItem(CACHE_KEY));return Array.isArray(x)?x:[];}catch{return[];}}
-function saveCache(){localStorage.setItem(CACHE_KEY,JSON.stringify(records));}
+function saveCache(){try{localStorage.setItem(CACHE_KEY,JSON.stringify(records));}catch{}}
 function money(value){return Number(value||0).toLocaleString('en-US',{style:'currency',currency:'USD'});}
 function esc(v){return String(v??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));}
