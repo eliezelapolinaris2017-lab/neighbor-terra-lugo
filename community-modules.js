@@ -22,7 +22,7 @@ async function init(){
       if(!user)return;
       try{
         const snap=await fs.getDoc(fs.doc(db,...root(),'users',user.uid));
-        profile=snap.exists()?snap.data():profile;
+        profile=snap.exists()?{uid:user.uid,...snap.data()}:{uid:user.uid,role:'resident',name:user.displayName||user.email||'Residente'};
       }catch(e){console.warn('No se pudo cargar el perfil comunitario.',e);}
     });
   }catch(e){console.warn('Módulos comunitarios en modo local.',e);}
@@ -107,13 +107,20 @@ function bind(m,items){
 function row(m,x){
   if(m==='announcements'){
     const meta=[x.audience||'Todos',x.date||''].filter(Boolean).join(' · ');
-    const manage=isAdmin();
-    return `<article class="home-row"><div><strong>${icons[m]} ${esc(x.title||'Comunicado')}</strong><p style="white-space:pre-wrap;margin:.45rem 0 .3rem">${esc(x.message||'Sin mensaje')}</p><small>${esc(meta)}</small></div><div class="row-actions">${manage?`<button type="button" data-community-edit="${esc(x.id)}">Editar</button><button type="button" data-community-delete="${esc(x.id)}">Eliminar</button>`:''}</div></article>`;
+    return `<article class="home-row"><div><strong>${icons[m]} ${esc(x.title||'Comunicado')}</strong><p style="white-space:pre-wrap;margin:.45rem 0 .3rem">${esc(x.message||'Sin mensaje')}</p><small>${esc(meta)}</small></div><div class="row-actions">${isAdmin()?`<button type="button" data-community-edit="${esc(x.id)}">Editar</button><button type="button" data-community-delete="${esc(x.id)}">Eliminar</button>`:''}</div></article>`;
   }
-  const cfg={packages:[x.homeId||'Sin unidad',`${x.carrier||'Paquete'} · ${statusLabel(x.status)}`],incidents:[x.category||'Incidencia',`${x.location||'Sin ubicación'} · ${statusLabel(x.status)}`],reservations:[x.area||'Área común',`${x.date||''} ${x.time||''} · ${statusLabel(x.status)}`]}[m];
+  if(m==='reservations'){
+    const requester=reservationRequester(x);
+    const meta=[x.homeId?`Unidad ${x.homeId}`:'',x.date||'',x.time||'',statusLabel(x.status)].filter(Boolean).join(' · ');
+    const next=isAdmin()?nextStatus(m,x.status):null;
+    const manage=isAdmin()||(x.createdBy===auth?.currentUser?.uid&&['pending','open'].includes(x.status));
+    return `<article class="home-row"><div><strong>${icons[m]} ${esc(x.area||'Área común')}</strong><p style="margin:.4rem 0 .2rem"><b>Solicita:</b> ${esc(requester)}</p><small>${esc(meta)}</small></div><div class="row-actions">${next?`<button type="button" data-community-status="${esc(x.id)}" data-next-status="${next}">${statusAction(next)}</button>`:''}${manage?`<button type="button" data-community-edit="${esc(x.id)}">Editar</button>`:''}${isAdmin()?`<button type="button" data-community-delete="${esc(x.id)}">Eliminar</button>`:''}</div></article>`;
+  }
+  const cfg={packages:[x.homeId||'Sin unidad',`${x.carrier||'Paquete'} · ${statusLabel(x.status)}`],incidents:[x.category||'Incidencia',`${x.location||'Sin ubicación'} · ${statusLabel(x.status)}`]}[m];
   const next=isAdmin()?nextStatus(m,x.status):null,manage=isAdmin()||(x.createdBy===auth?.currentUser?.uid&&['pending','open'].includes(x.status));
   return `<article class="home-row"><div><strong>${icons[m]} ${esc(cfg[0])}</strong><p>${esc(cfg[1])}</p></div><div class="row-actions">${next?`<button type="button" data-community-status="${esc(x.id)}" data-next-status="${next}">${statusAction(next)}</button>`:''}${manage?`<button type="button" data-community-edit="${esc(x.id)}">Editar</button>`:''}${isAdmin()?`<button type="button" data-community-delete="${esc(x.id)}">Eliminar</button>`:''}</div></article>`;
 }
+function reservationRequester(x){return String(x.requesterName||x.createdByName||x.residentName||x.requestedByName||'Residente').trim()||'Residente';}
 function showForm(m,x={}){
   if(m==='announcements'&&!isAdmin())return;
   title.textContent=x.id?`Editar ${labels[m].toLowerCase()}`:`Nuevo ${labels[m].toLowerCase()}`;
@@ -123,14 +130,26 @@ function showForm(m,x={}){
 function fields(m,x){
   if(m==='packages')return `<label>Unidad<input name="homeId" required value="${esc(x.homeId||profile.homeId||'')}"></label><label>Transportista<select name="carrier">${opts(['Amazon','USPS','UPS','FedEx','DHL','Otro'],x.carrier)}</select></label><label>Descripción<input name="description" value="${esc(x.description||'')}"></label><input type="hidden" name="status" value="${esc(x.status||'pending')}">`;
   if(m==='incidents')return `<label>Categoría<select name="category">${opts(['Alumbrado','Seguridad','Agua','Áreas comunes','Basura','Otra'],x.category)}</select></label><label>Ubicación<input name="location" required value="${esc(x.location||'')}"></label><label>Descripción<textarea name="description" required>${esc(x.description||'')}</textarea></label><label>Prioridad<select name="priority">${opts(['Baja','Media','Alta','Urgente'],x.priority||'Media')}</select></label><input type="hidden" name="status" value="${esc(x.status||'open')}">`;
-  if(m==='reservations')return `<label>Área<select name="area">${opts(['Gazebo','Cancha','Área recreativa','Salón'],x.area)}</select></label><label>Fecha<input name="date" type="date" required value="${esc(x.date||'')}"></label><label>Horario<select name="time">${opts(['9:00 AM – 1:00 PM','2:00 PM – 6:00 PM','6:00 PM – 10:00 PM'],x.time)}</select></label><label>Unidad<input name="homeId" required value="${esc(x.homeId||profile.homeId||'')}"></label><input type="hidden" name="status" value="${esc(x.status||'pending')}">`;
+  if(m==='reservations'){
+    const requester=reservationRequester(x.id?x:{requesterName:profile.name||auth?.currentUser?.displayName||auth?.currentUser?.email||'Residente'});
+    return `<label>Solicitante<input value="${esc(requester)}" readonly></label><input type="hidden" name="requesterName" value="${esc(requester)}"><label>Área<select name="area">${opts(['Gazebo','Cancha','Área recreativa','Salón'],x.area)}</select></label><label>Fecha<input name="date" type="date" required value="${esc(x.date||'')}"></label><label>Horario<select name="time">${opts(['9:00 AM – 1:00 PM','2:00 PM – 6:00 PM','6:00 PM – 10:00 PM'],x.time)}</select></label><label>Unidad<input name="homeId" required value="${esc(x.homeId||profile.homeId||'')}"></label><input type="hidden" name="status" value="${esc(x.status||'pending')}">`;
+  }
   return `<label>Título<input name="title" required value="${esc(x.title||'')}"></label><label>Mensaje<textarea name="message" required>${esc(x.message||'')}</textarea></label><label>Audiencia<select name="audience">${opts(['Todos','Residentes','Seguridad','Junta'],x.audience||'Todos')}</select></label><label>Fecha<input name="date" type="date" value="${esc(x.date||new Date().toISOString().slice(0,10))}"></label>`;
 }
 async function saveForm(e,m,id){e.preventDefault();const msg=document.querySelector('#communityMessage'),data=Object.fromEntries(new FormData(form).entries());if(msg)msg.textContent='Guardando…';try{await save(m,id,data);openModule(m);}catch(err){if(msg)msg.textContent=err.message||'No se pudo guardar.';}}
 async function save(m,id,data){
-  const normalized={...data,homeId:String(data.homeId||'').toUpperCase(),destination:m==='announcements'?data.audience:'Administración',createdRole:profile.role||'resident'};
-  if(ready&&auth?.currentUser){const fs=await import('https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js');const payload={...normalized,updatedAt:fs.serverTimestamp(),updatedBy:auth.currentUser.uid};if(id)await fs.setDoc(fs.doc(db,...root(),m,id),payload,{merge:true});else await fs.addDoc(fs.collection(db,...root(),m),{...payload,createdAt:fs.serverTimestamp(),createdBy:auth.currentUser.uid,createdByName:profile.name||auth.currentUser.email||''});}
-  else{const a=readCache(m),r={...normalized,id:id||crypto.randomUUID(),createdBy:'local-user',createdAt:new Date().toISOString()},n=id?a.map(x=>x.id===id?{...x,...r}:x):[r,...a];writeCache(m,n);} await syncModule(m,true);
+  const existing=id?readCache(m).find(x=>x.id===id):null;
+  const normalized={...data,homeId:String(data.homeId||'').toUpperCase(),destination:m==='announcements'?data.audience:'Administración',createdRole:existing?.createdRole||profile.role||'resident'};
+  if(m==='reservations')normalized.requesterName=String(data.requesterName||existing?.requesterName||existing?.createdByName||profile.name||auth?.currentUser?.displayName||auth?.currentUser?.email||'Residente').trim();
+  if(ready&&auth?.currentUser){
+    const fs=await import('https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js');
+    const payload={...normalized,updatedAt:fs.serverTimestamp(),updatedBy:auth.currentUser.uid};
+    if(id)await fs.setDoc(fs.doc(db,...root(),m,id),payload,{merge:true});
+    else await fs.addDoc(fs.collection(db,...root(),m),{...payload,createdAt:fs.serverTimestamp(),createdBy:auth.currentUser.uid,createdByName:normalized.requesterName||profile.name||auth.currentUser.displayName||auth.currentUser.email||''});
+  }else{
+    const a=readCache(m),r={...normalized,id:id||crypto.randomUUID(),createdBy:existing?.createdBy||'local-user',createdByName:existing?.createdByName||normalized.requesterName||profile.name||'Residente',createdAt:existing?.createdAt||new Date().toISOString()},n=id?a.map(x=>x.id===id?{...x,...r}:x):[r,...a];writeCache(m,n);
+  }
+  await syncModule(m,true);
 }
 async function changeStatus(m,id,status){if(!isAdmin())return;const x=readCache(m).find(x=>x.id===id);if(x)await save(m,id,{...x,status});}
 async function removeItem(m,id){if(!isAdmin()||!confirm('¿Eliminar este registro?'))return;if(ready&&auth?.currentUser){const fs=await import('https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js');await fs.deleteDoc(fs.doc(db,...root(),m,id));}else writeCache(m,readCache(m).filter(x=>x.id!==id));await syncModule(m,true);openModule(m);}
