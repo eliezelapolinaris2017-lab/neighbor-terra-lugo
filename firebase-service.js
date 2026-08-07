@@ -16,6 +16,16 @@ export async function initializeNeighborFirebase() {
     const authModule = await import('https://www.gstatic.com/firebasejs/12.1.0/firebase-auth.js');
     const app = appModule.getApps().length ? appModule.getApp() : appModule.initializeApp(firebaseConfig);
     auth = authModule.getAuth(app);
+
+    // Safari privado puede fallar o demorarse con persistencia IndexedDB.
+    // Preferimos sesión del navegador y caemos a memoria si el almacenamiento está restringido.
+    try {
+      await timeout(authModule.setPersistence(auth, authModule.browserSessionPersistence), 2500);
+    } catch (error) {
+      console.warn('Persistencia de sesión no disponible; usando memoria.', error);
+      try { await authModule.setPersistence(auth, authModule.inMemoryPersistence); } catch {}
+    }
+
     db = (await firestore()).getFirestore(app);
     firebaseReady = true;
     return { ready: true, authModule };
@@ -33,13 +43,13 @@ export async function signInNeighbor(email, password) {
 
   const credential = await timeout(
     signInWithEmailAndPassword(auth, String(email || '').trim(), String(password || '')),
-    12000,
+    10000,
     'Firebase no respondió al iniciar sesión. Intenta nuevamente.'
   );
 
   let profile = null;
   try {
-    profile = await timeout(getUserProfile(credential.user.uid), 5000, 'El perfil tardó demasiado.');
+    profile = await timeout(getUserProfile(credential.user.uid), 4000, 'El perfil tardó demasiado.');
   } catch (error) {
     console.warn('Perfil no disponible inmediatamente:', error);
   }
@@ -63,7 +73,6 @@ export async function signInNeighbor(email, password) {
     throw new Error('Tu acceso está desactivado. Comunícate con la administración.');
   }
 
-  // No bloquear el login esperando consultas adicionales de residentes.
   syncProfileWithResident(credential.user, profile).catch((error) => {
     console.warn('Sincronización de residente en segundo plano:', error);
   });
@@ -74,7 +83,7 @@ export async function signInNeighbor(email, password) {
 export async function signOutNeighbor() {
   if (!auth) return;
   const { signOut } = await import('https://www.gstatic.com/firebasejs/12.1.0/firebase-auth.js');
-  await timeout(signOut(auth), 5000, 'No se pudo cerrar la sesión a tiempo.').catch(() => {});
+  await timeout(signOut(auth), 4000, 'No se pudo cerrar la sesión a tiempo.').catch(() => {});
 }
 
 export async function getUserProfile(uid) {
@@ -85,7 +94,7 @@ export async function getUserProfile(uid) {
 }
 
 async function ensureUserProfile(user) {
-  const existing = await getUserProfile(user.uid);
+  const existing = await timeout(getUserProfile(user.uid), 4000).catch(() => null);
   if (existing) return existing;
   const { doc, setDoc, serverTimestamp } = await firestore();
   const fallbackName = user.displayName || user.email?.split('@')[0] || 'Residente';
@@ -99,7 +108,7 @@ async function ensureUserProfile(user) {
     status: 'active',
     createdAt: serverTimestamp()
   };
-  await setDoc(doc(db, ...appRoot(), 'users', user.uid), profile, { merge: true });
+  await timeout(setDoc(doc(db, ...appRoot(), 'users', user.uid), profile, { merge: true }), 4000);
   return { ...profile, createdAt: null };
 }
 
@@ -110,7 +119,7 @@ async function syncProfileWithResident(user, profile) {
     const { collection, doc, getDocs, limit, query, serverTimestamp, setDoc, where } = await firestore();
     const snapshot = await timeout(
       getDocs(query(collection(db, ...appRoot(), 'residents'), where('email', '==', email), limit(1))),
-      5000,
+      4000,
       'La ficha del residente tardó demasiado.'
     );
     if (snapshot.empty) return profile;
@@ -130,7 +139,7 @@ async function syncProfileWithResident(user, profile) {
       status: resident.status === 'inactive' ? 'inactive' : (profile.status || 'active'),
       syncedAt: serverTimestamp()
     };
-    await timeout(setDoc(doc(db, ...appRoot(), 'users', user.uid), linkedProfile, { merge: true }), 5000);
+    await timeout(setDoc(doc(db, ...appRoot(), 'users', user.uid), linkedProfile, { merge: true }), 4000);
     window.dispatchEvent(new CustomEvent('neighbor:profile-updated', { detail: { ...linkedProfile, uid: user.uid, syncedAt: null } }));
     return { ...linkedProfile, syncedAt: null };
   } catch (error) {
