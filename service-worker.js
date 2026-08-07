@@ -1,4 +1,4 @@
-const CACHE_NAME = 'neighbor-terra-lugo-v1.1.3';
+const CACHE_NAME = 'neighbor-terra-lugo-v1.1.4';
 const APP_SHELL = [
   './', './index.html', './styles.css', './hero.css', './homes.css',
   './app.js', './auth-actions.js', './admin-actions.js', './users-module.js',
