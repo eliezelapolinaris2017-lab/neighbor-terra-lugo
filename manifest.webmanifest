@@ -1,7 +1,7 @@
 {
-  "name": "Neighbor · Terra Lugo",
+  "name": "Neighbor · Senderos del Río",
   "short_name": "Neighbor",
-  "description": "Plataforma comunitaria de Terra Lugo, Cupey Bajo.",
+  "description": "Plataforma comunitaria de Senderos del Río.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
